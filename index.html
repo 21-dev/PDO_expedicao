@@ -1,0 +1,1828 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestao PDO - Expedicao e Outbound</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
+        aside .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #334155; }
+        .writing-vertical-rl { writing-mode: vertical-rl; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in { animation: fadeIn 0.22s ease-out forwards; }
+    </style>
+</head>
+<body class="bg-slate-50 overflow-hidden flex h-screen text-slate-800">
+    <div id="login-view" class="h-screen w-full flex items-center justify-center bg-slate-900 relative">
+        <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(#475569 1px, transparent 1px); background-size: 24px 24px;"></div>
+        <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md z-10 relative">
+            <div class="text-center mb-8">
+                <div class="bg-blue-100 text-blue-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i data-lucide="shield-alert" class="w-8 h-8"></i>
+                </div>
+                <h1 class="text-2xl font-bold text-slate-800">Gestao PDO</h1>
+                <p class="text-sm text-slate-500 mt-1">Acesso restrito - Expedicao e Outbound</p>
+            </div>
+
+            <form onsubmit="doLogin(event)" class="space-y-5">
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1">Email</label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i data-lucide="user" class="w-5 h-5 text-slate-400"></i>
+                        </div>
+                        <input type="email" id="login_user" required autocomplete="username" class="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="seu.email@empresa.com">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1">Senha</label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i data-lucide="lock" class="w-5 h-5 text-slate-400"></i>
+                        </div>
+                        <input type="password" id="login_pass" required autocomplete="current-password" class="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="********">
+                    </div>
+                </div>
+                <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition-colors shadow-md mt-4">
+                    Entrar no Sistema
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div id="app-view" class="h-screen w-full flex hidden">
+        <div id="topbar-mobile" class="md:hidden fixed top-0 left-0 w-full bg-slate-900 text-white p-4 flex justify-between items-center z-40 shadow-md">
+            <h1 class="text-lg font-bold flex items-center tracking-tight">
+                <i data-lucide="shield-alert" class="mr-2 text-blue-500 w-5 h-5"></i>
+                Gestao PDO
+            </h1>
+            <button onclick="toggleMobileMenu()" class="p-1 focus:outline-none" aria-label="Abrir menu">
+                <i data-lucide="menu" class="w-6 h-6"></i>
+            </button>
+        </div>
+
+        <div id="mobile-overlay" class="md:hidden fixed inset-0 bg-slate-900/60 z-40 backdrop-blur-sm hidden" onclick="toggleMobileMenu()"></div>
+
+        <aside id="sidebar" class="fixed inset-y-0 left-0 transform -translate-x-full md:relative md:translate-x-0 transition-transform duration-300 ease-in-out w-64 bg-slate-900 text-slate-300 flex flex-col shrink-0 z-50 shadow-2xl md:shadow-none">
+            <div class="p-5 border-b border-slate-800 flex justify-between items-center">
+                <div>
+                    <h1 class="text-xl font-bold text-white tracking-tight flex items-center">
+                        <i data-lucide="shield-alert" class="mr-2 text-blue-500 w-6 h-6"></i>
+                        Gestao PDO
+                    </h1>
+                    <p class="text-[10px] text-slate-500 mt-1 uppercase tracking-wider font-semibold">Expedicao e Outbound</p>
+                </div>
+                <button class="md:hidden text-slate-400 hover:text-white" onclick="toggleMobileMenu()" aria-label="Fechar menu">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+
+            <nav class="flex-1 px-3 py-6 space-y-1.5 overflow-y-auto custom-scrollbar" id="nav-menu"></nav>
+
+            <div class="p-4 border-t border-slate-800 bg-slate-900/50 flex flex-col gap-2">
+                <button onclick="navigate('admin')" id="nav-btn-admin" class="w-full flex items-center px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800">
+                    <i data-lucide="settings" class="mr-3 shrink-0 w-4 h-4"></i>
+                    Administracao
+                </button>
+                <button onclick="doLogout()" class="w-full flex items-center px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-red-400 hover:text-red-300 hover:bg-red-900/20">
+                    <i data-lucide="log-out" class="mr-3 shrink-0 w-4 h-4"></i>
+                    Sair do Sistema
+                </button>
+            </div>
+        </aside>
+
+        <main class="flex-1 overflow-y-auto mt-16 md:mt-0 p-4 md:p-8 w-full bg-slate-50/50 relative scroll-smooth custom-scrollbar">
+            <div class="max-w-7xl mx-auto pb-10" id="app-content"></div>
+        </main>
+    </div>
+
+    <div id="toast-container" class="fixed bottom-4 right-4 z-[200] flex flex-col gap-2"></div>
+
+    <div id="image-modal" class="fixed inset-0 bg-slate-900/95 z-[150] hidden flex-col items-center justify-center p-4 backdrop-blur-sm">
+        <button onclick="closeImageModal()" class="absolute top-4 right-4 md:top-8 md:right-8 text-slate-400 hover:text-white bg-slate-800 p-2 rounded-full focus:outline-none transition-colors" aria-label="Fechar imagem">
+            <i data-lucide="x" class="w-6 h-6 md:w-8 md:h-8"></i>
+        </button>
+        <img id="image-modal-img" src="" class="max-w-full max-h-[85vh] rounded-lg shadow-2xl object-contain border border-slate-700" alt="Anexo de absenteismo">
+        <p class="text-slate-400 text-sm mt-4 text-center">Anexo de absenteismo</p>
+    </div>
+
+<script>
+const STORAGE_COLLABORATORS = 'pdo_collaborators';
+const STORAGE_COMPETENCIES = 'pdo_competencies';
+const SUPABASE_URL = 'https://sfjovqomjfqhzalhogjv.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNmam92cW9tamZxaHphbGhvZ2p2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2MDQyNTAsImV4cCI6MjA5ODE4MDI1MH0.gdtNwG-x_U_XyEEY3dTzPlixdD12S1dfrrsm8U_NWXY';
+const SUPABASE_STATE_TABLE = 'pdo_app_state';
+const APP_STATE_COLLABORATORS = 'collaborators';
+const APP_STATE_COMPETENCIES = 'competencies';
+const SECTOR_EXPEDICAO = 'Expedicao';
+const SECTOR_OUTBOUND = 'Outbound';
+const sectorsList = [SECTOR_EXPEDICAO, SECTOR_OUTBOUND];
+
+const initialCompetencies = [
+    { id: 'c1', name: 'Triagem B2C', category: 'Operacional', mandatory: true, sector: SECTOR_EXPEDICAO },
+    { id: 'c2', name: 'Triagem B2B', category: 'Operacional', mandatory: true, sector: SECTOR_EXPEDICAO },
+    { id: 'c3', name: 'Conferencia B2C', category: 'Operacional', mandatory: true, sector: SECTOR_EXPEDICAO },
+    { id: 'c4', name: 'Conferencia B2B', category: 'Operacional', mandatory: true, sector: SECTOR_EXPEDICAO },
+    { id: 'c5', name: 'Expedicao', category: 'Operacional', mandatory: true, sector: SECTOR_EXPEDICAO },
+    { id: 'c6', name: 'Analise de Base', category: 'Operacional', mandatory: false, sector: SECTOR_OUTBOUND },
+    { id: 'c7', name: 'Exportacao', category: 'Operacional', mandatory: false, sector: SECTOR_OUTBOUND },
+    { id: 'c8', name: 'Devolucao', category: 'Operacional', mandatory: true, sector: SECTOR_OUTBOUND },
+    { id: 'c9', name: 'Trabalho em equipe', category: 'Comportamental', mandatory: true, sector: SECTOR_EXPEDICAO },
+    { id: 'c10', name: 'Seguranca', category: 'Comportamental', mandatory: true, sector: SECTOR_EXPEDICAO }
+];
+
+const initialCollaborators = [
+    {
+        id: 'col1',
+        name: 'Felipe Silva',
+        role: 'Lider Operacional',
+        sector: SECTOR_EXPEDICAO,
+        shift: '1 Turno',
+        admission: '2022-03-15',
+        status: 'Ativo',
+        timeInRole: '2 anos',
+        warnings: [],
+        trainings: ['NR-11', 'Lideranca', 'Integracao'],
+        history: [{ date: '10/01/2024', event: 'Promocao para Lider' }],
+        scores: { c1: 3, c2: 3, c3: 3, c4: 2, c5: 3, c6: 1, c7: 0, c8: 3, c9: 3, c10: 3 },
+        gaps: [],
+        absenteismo: [],
+        feedbacks: []
+    },
+    {
+        id: 'col2',
+        name: 'Joao Souza',
+        role: 'Operador de Logistica',
+        sector: SECTOR_OUTBOUND,
+        shift: '2 Turno',
+        admission: '2023-08-01',
+        status: 'Ativo',
+        timeInRole: '10 meses',
+        warnings: [{ date: '20/02/2024', reason: 'Atraso reincidente na chegada ao turno.' }],
+        trainings: ['Integracao'],
+        history: [{ date: '20/02/2024', event: 'Advertencia aplicada' }],
+        scores: { c1: 2, c2: 1, c3: 2, c4: 1, c5: 2, c6: 0, c7: 0, c8: 1, c9: 2, c10: 3 },
+        gaps: [],
+        absenteismo: [],
+        feedbacks: []
+    }
+];
+
+const shiftsList = ['1 Turno', '2 Turno', '3 Turno', 'Comercial'];
+const rolesList = ['Lider Operacional', 'Operador de Logistica', 'Auxiliar de Expedicao', 'Conferente'];
+const evaluationCriteria = [
+    { id: 1, text: 'Recebeu instrucao do processo e sabe onde consultar os procedimentos (POP)' },
+    { id: 2, text: 'Consegue executar a atividade com acompanhamento ou supervisao' },
+    { id: 3, text: 'Executa a rotina sozinho com autonomia na maior parte do tempo' },
+    { id: 4, text: 'Atinge a meta da area e mantem a qualidade com poucos erros' },
+    { id: 5, text: 'Identifica e resolve anomalias ou excecoes do processo sem ajuda' },
+    { id: 6, text: 'Possui visao critica para sugerir melhorias no setor' },
+    { id: 7, text: 'Domina a atividade e esta apto a ensinar novos colaboradores' }
+];
+
+const navItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard' },
+    { id: 'cadastro', label: 'Fichas Funcionais', icon: 'users' },
+    { id: 'competencias', label: 'Competencias', icon: 'book-open' },
+    { id: 'matriz-exp', label: 'Matriz Exp.', icon: 'grid' },
+    { id: 'matriz-out', label: 'Matriz Out.', icon: 'grid-3x3' },
+    { id: 'polivalencia-exp', label: 'Polivalencia Exp.', icon: 'star' },
+    { id: 'polivalencia-out', label: 'Polivalencia Out.', icon: 'sparkles' },
+    { id: 'absenteismo', label: 'Absenteismo', icon: 'calendar-x' }
+];
+
+let db = {
+    collaborators: JSON.parse(JSON.stringify(initialCollaborators)).map(normalizeCollaborator),
+    competencies: JSON.parse(JSON.stringify(initialCompetencies)).map(normalizeCompetency)
+};
+
+let uiState = {
+    activeTab: 'dashboard',
+    selectedColabId: null,
+    isEditingColab: false,
+    editColabForm: null,
+    showDeleteColabConfirm: false,
+    editingCompId: null,
+    editCompForm: null,
+    showDeleteCompConfirm: null,
+    filterShift: '',
+    filterRole: '',
+    filterSector: '',
+    compFilterSector: '',
+    evalSector: '',
+    gapSector: '',
+    feedbackSector: '',
+    activeAdminTab: 'avaliacao',
+    evalColabId: '',
+    evalCompId: '',
+    evalCheckedItems: new Set(),
+    tempAbsenteismoImage: null
+};
+
+let supabaseClient = null;
+let isDataLoaded = false;
+let currentSession = null;
+
+function getSupabaseClient() {
+    if (supabaseClient) return supabaseClient;
+    if (!window.supabase || !SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.includes('COLE_SUA_CHAVE')) return null;
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: {
+            persistSession: true,
+            autoRefreshToken: true,
+            detectSessionInUrl: true
+        }
+    });
+    return supabaseClient;
+}
+
+function loadLocalArray(key, fallback) {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(key));
+        return Array.isArray(parsed) ? parsed : JSON.parse(JSON.stringify(fallback));
+    } catch (error) {
+        return JSON.parse(JSON.stringify(fallback));
+    }
+}
+
+function getFallbackState() {
+    return {
+        collaborators: loadLocalArray(STORAGE_COLLABORATORS, initialCollaborators).map(normalizeCollaborator),
+        competencies: loadLocalArray(STORAGE_COMPETENCIES, initialCompetencies).map(normalizeCompetency)
+    };
+}
+
+async function loadData() {
+    const client = getSupabaseClient();
+    if (!client) {
+        db = getFallbackState();
+        isDataLoaded = true;
+        showToast('Configure a chave anon do Supabase para carregar o banco.', 'error');
+        return;
+    }
+
+    try {
+        const { data, error } = await client
+            .from(SUPABASE_STATE_TABLE)
+            .select('state_key,state_value')
+            .in('state_key', [APP_STATE_COLLABORATORS, APP_STATE_COMPETENCIES]);
+
+        if (error) throw error;
+
+        const rows = Object.fromEntries((data || []).map(row => [row.state_key, row.state_value]));
+        const localFallback = getFallbackState();
+        const collaborators = Array.isArray(rows[APP_STATE_COLLABORATORS])
+            ? rows[APP_STATE_COLLABORATORS]
+            : localFallback.collaborators;
+        const competencies = Array.isArray(rows[APP_STATE_COMPETENCIES])
+            ? rows[APP_STATE_COMPETENCIES]
+            : localFallback.competencies;
+
+        db = {
+            collaborators: collaborators.map(normalizeCollaborator),
+            competencies: competencies.map(normalizeCompetency)
+        };
+
+        if (!rows[APP_STATE_COLLABORATORS] || !rows[APP_STATE_COMPETENCIES]) {
+            await saveData(false);
+        }
+
+        isDataLoaded = true;
+    } catch (error) {
+        console.error('Erro ao carregar Supabase:', error);
+        db = getFallbackState();
+        isDataLoaded = true;
+        showToast(`Erro ao carregar Supabase: ${error.message}`, 'error');
+    }
+}
+
+function normalizeCollaborator(c) {
+    return {
+        ...c,
+        sector: sectorsList.includes(c.sector) ? c.sector : SECTOR_EXPEDICAO,
+        warnings: c.warnings || [],
+        trainings: c.trainings || [],
+        history: c.history || [],
+        scores: c.scores || {},
+        gaps: c.gaps || [],
+        absenteismo: c.absenteismo || [],
+        feedbacks: c.feedbacks || []
+    };
+}
+
+function normalizeCompetency(c) {
+    return {
+        ...c,
+        sector: sectorsList.includes(c.sector) ? c.sector : SECTOR_EXPEDICAO,
+        mandatory: Boolean(c.mandatory)
+    };
+}
+
+function sectorLabel(sector) {
+    return sector === SECTOR_OUTBOUND ? 'Outbound' : 'Expedicao';
+}
+
+function sectorOptions(selected, includeAllLabel = '') {
+    return `${includeAllLabel ? `<option value="">${includeAllLabel}</option>` : ''}${sectorsList.map(s => `<option value="${s}" ${selected === s ? 'selected' : ''}>${sectorLabel(s)}</option>`).join('')}`;
+}
+
+function getActiveCollaboratorsBySector(sector) {
+    return db.collaborators.filter(c => c.status !== 'Desligado' && c.sector === sector);
+}
+
+function getCompetenciesBySector(sector) {
+    return db.competencies.filter(c => c.sector === sector);
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    }[char]));
+}
+
+function todayBr() {
+    return new Date().toLocaleDateString('pt-BR');
+}
+
+function formatDateBr(value) {
+    if (!value) return '-';
+    if (String(value).includes('/')) return value;
+    const parts = String(value).split('-');
+    if (parts.length !== 3) return value;
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
+
+async function saveData(showSuccess = false) {
+    const client = getSupabaseClient();
+    if (!client) {
+        showToast('Configure a chave anon do Supabase antes de salvar.', 'error');
+        return false;
+    }
+    if (!currentSession) {
+        showToast('Sessao expirada. Entre novamente para salvar.', 'error');
+        await checkAuth();
+        return false;
+    }
+
+    const payload = [
+        { state_key: APP_STATE_COLLABORATORS, state_value: db.collaborators, updated_at: new Date().toISOString() },
+        { state_key: APP_STATE_COMPETENCIES, state_value: db.competencies, updated_at: new Date().toISOString() }
+    ];
+    const { error } = await client
+        .from(SUPABASE_STATE_TABLE)
+        .upsert(payload, { onConflict: 'state_key' });
+
+    if (error) {
+        console.error('Erro ao salvar Supabase:', error);
+        showToast(`Erro ao salvar no Supabase: ${error.message}`, 'error');
+        return false;
+    }
+
+    if (showSuccess) showToast('Dados salvos no Supabase.');
+    return true;
+}
+
+function createIcons(root) {
+    if (window.lucide) lucide.createIcons(root ? { root } : undefined);
+}
+
+function showToast(msg, type = 'success') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    const isError = type === 'error';
+    toast.className = `p-3 rounded-lg flex items-center shadow-md transform transition-all translate-y-10 opacity-0 ${
+        isError ? 'bg-red-100 border border-red-300 text-red-800' : 'bg-green-100 border border-green-300 text-green-800'
+    }`;
+    toast.innerHTML = `
+        <i data-lucide="${isError ? 'alert-triangle' : 'check-circle'}" class="mr-2 w-5 h-5"></i>
+        <span>${escapeHtml(msg)}</span>
+    `;
+    container.appendChild(toast);
+    createIcons(toast);
+    setTimeout(() => toast.classList.remove('translate-y-10', 'opacity-0'), 10);
+    setTimeout(() => {
+        toast.classList.add('opacity-0');
+        setTimeout(() => toast.remove(), 300);
+    }, 3500);
+}
+
+function renderLoadingState(message = 'Carregando dados do Supabase...') {
+    renderNav();
+    const container = document.getElementById('app-content');
+    container.innerHTML = `
+        <div class="min-h-[320px] flex items-center justify-center">
+            <div class="bg-white border border-slate-200 rounded-xl shadow-sm px-6 py-5 flex items-center gap-3 text-slate-600">
+                <i data-lucide="loader-2" class="w-5 h-5 animate-spin text-blue-600"></i>
+                <span class="font-medium">${escapeHtml(message)}</span>
+            </div>
+        </div>
+    `;
+    createIcons(container);
+}
+
+async function checkAuth() {
+    const client = getSupabaseClient();
+    if (!client) {
+        document.getElementById('login-view').classList.remove('hidden');
+        document.getElementById('app-view').classList.add('hidden');
+        showToast('Supabase nao configurado.', 'error');
+        createIcons();
+        return;
+    }
+
+    const { data, error } = await client.auth.getSession();
+    if (error) {
+        console.error('Erro ao verificar sessao:', error);
+        showToast('Nao foi possivel verificar a sessao.', 'error');
+    }
+
+    currentSession = data?.session || null;
+    const isLogged = Boolean(currentSession);
+    document.getElementById('login-view').classList.toggle('hidden', isLogged);
+    document.getElementById('app-view').classList.toggle('hidden', !isLogged);
+    if (isLogged) {
+        if (!isDataLoaded) {
+            renderLoadingState();
+            await loadData();
+        }
+        renderApp();
+    }
+    createIcons();
+}
+
+async function doLogin(event) {
+    event.preventDefault();
+    const client = getSupabaseClient();
+    if (!client) {
+        showToast('Supabase nao configurado.', 'error');
+        return;
+    }
+
+    const email = document.getElementById('login_user').value.trim();
+    const password = document.getElementById('login_pass').value;
+    const { data, error } = await client.auth.signInWithPassword({ email, password });
+    if (error) {
+        showToast('Email ou senha incorretos.', 'error');
+        return;
+    }
+
+    currentSession = data.session;
+    isDataLoaded = false;
+    showToast('Bem-vindo ao Gestao PDO!');
+    await checkAuth();
+}
+
+async function doLogout() {
+    const client = getSupabaseClient();
+    if (client) await client.auth.signOut();
+    currentSession = null;
+    isDataLoaded = false;
+    document.getElementById('login_user').value = '';
+    document.getElementById('login_pass').value = '';
+    await checkAuth();
+}
+
+function toggleMobileMenu() {
+    document.getElementById('sidebar').classList.toggle('-translate-x-full');
+    document.getElementById('mobile-overlay').classList.toggle('hidden');
+}
+
+function closeMobileMenu() {
+    document.getElementById('sidebar').classList.add('-translate-x-full');
+    document.getElementById('mobile-overlay').classList.add('hidden');
+}
+
+function openImageModal(src) {
+    document.getElementById('image-modal-img').src = src;
+    document.getElementById('image-modal').classList.remove('hidden');
+    document.getElementById('image-modal').classList.add('flex');
+}
+
+function closeImageModal() {
+    document.getElementById('image-modal').classList.add('hidden');
+    document.getElementById('image-modal').classList.remove('flex');
+    document.getElementById('image-modal-img').src = '';
+}
+
+function navigate(tabId) {
+    uiState.activeTab = tabId;
+    uiState.selectedColabId = null;
+    uiState.isEditingColab = false;
+    uiState.editingCompId = null;
+    closeMobileMenu();
+    renderApp();
+}
+
+function renderNav() {
+    const navMenu = document.getElementById('nav-menu');
+    navMenu.innerHTML = navItems.map(item => `
+        <button onclick="navigate('${item.id}')" class="w-full flex items-center px-4 py-3 rounded-xl transition-all duration-200 text-sm font-medium ${
+            uiState.activeTab === item.id
+            ? 'bg-blue-600 text-white shadow-md shadow-blue-900/20'
+            : 'hover:bg-slate-800 hover:text-slate-100 text-slate-300'
+        }">
+            <i data-lucide="${item.icon}" class="mr-3 shrink-0 w-4 h-4"></i>
+            ${item.label}
+        </button>
+    `).join('');
+
+    const adminBtn = document.getElementById('nav-btn-admin');
+    adminBtn.className = uiState.activeTab === 'admin'
+        ? 'w-full flex items-center px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-blue-400 bg-slate-800 shadow-inner'
+        : 'w-full flex items-center px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800';
+}
+
+function scoreToLevel(score) {
+    if (score > 0 && score <= 2) return 1;
+    if (score > 2 && score <= 4) return 2;
+    if (score > 4) return 3;
+    return 0;
+}
+
+function levelLabel(level) {
+    return {
+        0: 'Nao treinado (N0)',
+        1: 'Em treino (N1)',
+        2: 'Autonomo (N2)',
+        3: 'Especialista (N3)'
+    }[level] || 'Nao treinado (N0)';
+}
+
+function renderDashboard() {
+    const active = db.collaborators.filter(c => c.status !== 'Desligado');
+
+    const alerts = [];
+    db.competencies.forEach(comp => {
+        const sectorActive = active.filter(c => c.sector === comp.sector);
+        const specialistsCount = sectorActive.filter(c => c.scores[comp.id] === 3).length;
+        const trainingCount = sectorActive.filter(c => c.scores[comp.id] === 1).length;
+        const sector = sectorLabel(comp.sector);
+        if (specialistsCount < 2) alerts.push({ type: 'danger', msg: `[${sector}] A competencia "${comp.name}" possui apenas ${specialistsCount} especialista(s).` });
+        if (specialistsCount > 0 && trainingCount === 0) alerts.push({ type: 'warning', msg: `[${sector}] O processo "${comp.name}" nao possui sucessao em treinamento.` });
+    });
+
+    const dangerCount = alerts.filter(a => a.type === 'danger').length;
+    const sectorStats = sectorsList.map(sector => {
+        const people = getActiveCollaboratorsBySector(sector);
+        return {
+            sector,
+            collaborators: people.length,
+            specialists: people.filter(c => Object.values(c.scores).some(score => score === 3)).length,
+            inTraining: people.filter(c => Object.values(c.scores).some(score => score === 1)).length
+        };
+    });
+
+    return `
+        <div class="space-y-6 animate-fade-in">
+            <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-2">
+                <div>
+                    <h2 class="text-xl md:text-2xl font-bold text-slate-800">Gestao PDO - Expedicao e Outbound</h2>
+                    <p class="text-sm text-slate-500">Visao separada por Expedicao e Outbound, com alertas consolidados.</p>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-lg px-4 py-3 shadow-sm flex items-center gap-2 text-red-600">
+                    <i data-lucide="shield-alert" class="w-5 h-5"></i>
+                    <span class="text-sm font-semibold">${dangerCount} alertas criticos</span>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                ${sectorStats.map(stat => `
+                    <section class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 md:p-5">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-bold text-slate-800">${sectorLabel(stat.sector)}</h3>
+                            <span class="text-xs uppercase tracking-wide text-slate-500 bg-slate-100 px-2 py-1 rounded">${stat.sector}</span>
+                        </div>
+                        <div class="grid grid-cols-3 gap-3">
+                            <div class="rounded-lg border border-blue-100 bg-blue-50 p-3 text-center">
+                                <i data-lucide="users" class="text-blue-500 mb-1 w-5 h-5 mx-auto"></i>
+                                <div class="text-2xl font-bold text-slate-800">${stat.collaborators}</div>
+                                <div class="text-xs text-slate-500">Colaboradores</div>
+                            </div>
+                            <div class="rounded-lg border border-green-100 bg-green-50 p-3 text-center">
+                                <i data-lucide="award" class="text-green-500 mb-1 w-5 h-5 mx-auto"></i>
+                                <div class="text-2xl font-bold text-slate-800">${stat.specialists}</div>
+                                <div class="text-xs text-slate-500">Especialistas</div>
+                            </div>
+                            <div class="rounded-lg border border-yellow-100 bg-yellow-50 p-3 text-center">
+                                <i data-lucide="clock" class="text-yellow-500 mb-1 w-5 h-5 mx-auto"></i>
+                                <div class="text-2xl font-bold text-slate-800">${stat.inTraining}</div>
+                                <div class="text-xs text-slate-500">Em treino</div>
+                            </div>
+                        </div>
+                    </section>
+                `).join('')}
+            </div>
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 md:p-6">
+                <h3 class="text-lg font-semibold text-slate-800 mb-4 flex items-center">
+                    <i data-lucide="alert-triangle" class="mr-2 text-orange-500 w-5 h-5"></i>
+                    Alertas do Sistema
+                </h3>
+                <div class="space-y-3">
+                    ${alerts.length ? alerts.map(alert => `
+                        <div class="p-3 md:p-4 rounded-lg flex items-start text-sm md:text-base ${alert.type === 'danger' ? 'bg-red-50 border border-red-200 text-red-800' : 'bg-yellow-50 border border-yellow-200 text-yellow-800'}">
+                            <i data-lucide="alert-triangle" class="mr-3 shrink-0 ${alert.type === 'danger' ? 'text-red-500' : 'text-yellow-500'} w-5 h-5"></i>
+                            <span>${escapeHtml(alert.msg)}</span>
+                        </div>
+                    `).join('') : `
+                        <div class="p-4 bg-green-50 border border-green-200 text-green-800 rounded-lg flex items-center text-sm md:text-base">
+                            <i data-lucide="check-circle" class="mr-2 shrink-0 w-5 h-5"></i>
+                            Operacao saudavel. Nenhum alerta critico no momento.
+                        </div>
+                    `}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function getSelectedColab() {
+    return db.collaborators.find(c => c.id === uiState.selectedColabId) || null;
+}
+
+function cadViewColab(id) {
+    uiState.selectedColabId = id;
+    uiState.isEditingColab = false;
+    renderApp();
+}
+
+function cadBackList() {
+    uiState.selectedColabId = null;
+    uiState.isEditingColab = false;
+    renderApp();
+}
+
+function cadEditColab() {
+    const colab = getSelectedColab();
+    if (!colab) return;
+    uiState.editColabForm = JSON.parse(JSON.stringify(colab));
+    uiState.editColabForm.trainingsText = uiState.editColabForm.trainings.join(', ');
+    uiState.isEditingColab = true;
+    uiState.showDeleteColabConfirm = false;
+    renderApp();
+}
+
+function cadCancelEdit() {
+    uiState.isEditingColab = false;
+    uiState.editColabForm = null;
+    renderApp();
+}
+
+function cadUpdateField(field, value) {
+    uiState.editColabForm[field] = value;
+}
+
+function cadSetSectorFilter(value) {
+    uiState.filterSector = value;
+    renderApp();
+}
+
+function cadAddWarning() {
+    const input = document.getElementById('newWarningInput');
+    const reason = input.value.trim();
+    if (!reason) return;
+    uiState.editColabForm.warnings.push({ date: todayBr(), reason });
+    input.value = '';
+    renderApp();
+}
+
+function cadRemoveWarning(index) {
+    uiState.editColabForm.warnings.splice(index, 1);
+    renderApp();
+}
+
+async function cadSaveColab(event) {
+    event.preventDefault();
+    const form = uiState.editColabForm;
+    const updatedColab = normalizeCollaborator({
+        ...form,
+        trainings: form.trainingsText.split(',').map(t => t.trim()).filter(Boolean),
+        history: [{ date: todayBr(), event: 'Dados da ficha atualizados' }, ...form.history]
+    });
+    delete updatedColab.trainingsText;
+    db.collaborators = db.collaborators.map(c => c.id === updatedColab.id ? updatedColab : c);
+    const saved = await saveData();
+    if (!saved) return;
+    uiState.selectedColabId = updatedColab.id;
+    uiState.isEditingColab = false;
+    uiState.editColabForm = null;
+    showToast('Ficha atualizada com sucesso!');
+    renderApp();
+}
+
+function cadShowDeleteConfirm(show) {
+    uiState.showDeleteColabConfirm = show;
+    renderApp();
+}
+
+async function cadDeleteColab() {
+    db.collaborators = db.collaborators.filter(c => c.id !== uiState.selectedColabId);
+    const saved = await saveData();
+    if (!saved) return;
+    uiState.selectedColabId = null;
+    uiState.isEditingColab = false;
+    showToast('Colaborador removido.');
+    renderApp();
+}
+
+function renderCadastro() {
+    const colab = getSelectedColab();
+    if (!colab) {
+        const list = db.collaborators.filter(c => !uiState.filterSector || c.sector === uiState.filterSector);
+        return `
+            <div class="space-y-4 md:space-y-6 animate-fade-in">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <h2 class="text-xl md:text-2xl font-bold text-slate-800">Fichas de Colaboradores</h2>
+                    <select onchange="cadSetSectorFilter(this.value)" class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-blue-500">
+                        ${sectorOptions(uiState.filterSector, 'Todos os setores')}
+                    </select>
+                </div>
+                <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden overflow-x-auto">
+                    <table class="w-full text-left border-collapse min-w-[760px]">
+                        <thead>
+                            <tr class="bg-slate-50 border-b border-slate-200">
+                                <th class="p-4 font-semibold text-slate-600 text-sm">Nome</th>
+                                <th class="p-4 font-semibold text-slate-600 text-sm">Setor</th>
+                                <th class="p-4 font-semibold text-slate-600 text-sm">Funcao</th>
+                                <th class="p-4 font-semibold text-slate-600 text-sm">Turno</th>
+                                <th class="p-4 font-semibold text-slate-600 text-sm">Status</th>
+                                <th class="p-4 font-semibold text-slate-600 text-sm text-center">Registros</th>
+                                <th class="p-4 font-semibold text-slate-600 text-sm">Acao</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${list.map(c => `
+                                <tr class="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                                    <td class="p-4 font-medium text-slate-800">${escapeHtml(c.name)}</td>
+                                    <td class="p-4 text-slate-600">${sectorLabel(c.sector)}</td>
+                                    <td class="p-4 text-slate-600">${escapeHtml(c.role)}</td>
+                                    <td class="p-4 text-slate-600">${escapeHtml(c.shift)}</td>
+                                    <td class="p-4"><span class="px-2 py-1 rounded-full text-xs font-medium ${c.status === 'Ativo' ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-700'}">${escapeHtml(c.status)}</span></td>
+                                    <td class="p-4 text-center text-xs text-slate-600">${c.feedbacks.length} feedbacks / ${c.gaps.length} gaps / ${c.absenteismo.length} ausencias</td>
+                                    <td class="p-4">
+                                        <button onclick="cadViewColab('${c.id}')" class="text-blue-600 hover:text-blue-800 font-medium text-sm flex items-center">
+                                            Ver ficha <i data-lucide="chevron-right" class="ml-1 w-4 h-4"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+
+    if (uiState.isEditingColab) {
+        const form = uiState.editColabForm;
+        return `
+            <div class="space-y-4 md:space-y-6 animate-fade-in">
+                <button onclick="cadCancelEdit()" class="text-slate-500 hover:text-slate-700 flex items-center">
+                    <i data-lucide="arrow-left" class="w-4 h-4 mr-1"></i> Cancelar edicao
+                </button>
+                <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden p-4 md:p-6">
+                    <h2 class="text-xl md:text-2xl font-bold text-slate-800 mb-6 flex items-center">
+                        <i data-lucide="edit" class="mr-2 text-blue-600 w-6 h-6"></i> Editar ficha
+                    </h2>
+                    <form onsubmit="cadSaveColab(event)" class="space-y-5">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <label class="block text-sm font-medium text-slate-700">Nome completo
+                                <input type="text" required value="${escapeHtml(form.name)}" onchange="cadUpdateField('name', this.value)" class="mt-1 w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                            </label>
+                            <label class="block text-sm font-medium text-slate-700">Status
+                                <select onchange="cadUpdateField('status', this.value)" class="mt-1 w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                                    ${['Ativo', 'Ferias', 'Afastado', 'Desligado'].map(s => `<option value="${s}" ${form.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+                                </select>
+                            </label>
+                            <label class="block text-sm font-medium text-slate-700">Funcao
+                                <select onchange="cadUpdateField('role', this.value)" class="mt-1 w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                                    ${rolesList.map(r => `<option value="${r}" ${form.role === r ? 'selected' : ''}>${r}</option>`).join('')}
+                                </select>
+                            </label>
+                            <label class="block text-sm font-medium text-slate-700">Setor
+                                <select onchange="cadUpdateField('sector', this.value)" class="mt-1 w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                                    ${sectorOptions(form.sector)}
+                                </select>
+                            </label>
+                            <label class="block text-sm font-medium text-slate-700">Turno
+                                <select onchange="cadUpdateField('shift', this.value)" class="mt-1 w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                                    ${shiftsList.map(s => `<option value="${s}" ${form.shift === s ? 'selected' : ''}>${s}</option>`).join('')}
+                                </select>
+                            </label>
+                            <label class="block text-sm font-medium text-slate-700">Data de admissao
+                                <input type="date" value="${escapeHtml(form.admission)}" onchange="cadUpdateField('admission', this.value)" class="mt-1 w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                            </label>
+                            <label class="block text-sm font-medium text-slate-700">Tempo na funcao
+                                <input type="text" value="${escapeHtml(form.timeInRole || '')}" onchange="cadUpdateField('timeInRole', this.value)" class="mt-1 w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                            </label>
+                            <label class="md:col-span-2 block text-sm font-medium text-slate-700">Treinamentos realizados
+                                <input type="text" value="${escapeHtml(form.trainingsText)}" onchange="cadUpdateField('trainingsText', this.value)" class="mt-1 w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ex: NR-11, Integracao">
+                            </label>
+                        </div>
+
+                        <div class="bg-red-50 p-4 rounded-xl border border-red-100">
+                            <h3 class="font-semibold text-red-800 mb-3 flex items-center"><i data-lucide="alert-triangle" class="mr-2 w-4 h-4"></i> Advertencias</h3>
+                            <div class="flex gap-2 mb-3">
+                                <input type="text" id="newWarningInput" placeholder="Descreva o motivo" class="flex-1 border border-red-200 rounded-lg p-2 focus:ring-2 focus:ring-red-500 outline-none text-sm">
+                                <button type="button" onclick="cadAddWarning()" class="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700">Adicionar</button>
+                            </div>
+                            <ul class="space-y-2">
+                                ${form.warnings.map((w, index) => `
+                                    <li class="flex justify-between items-center bg-white p-2 rounded border border-red-100 text-sm">
+                                        <span><strong class="text-red-700">${escapeHtml(w.date)}:</strong> ${escapeHtml(w.reason)}</span>
+                                        <button type="button" onclick="cadRemoveWarning(${index})" class="text-slate-400 hover:text-red-600"><i data-lucide="x-circle" class="w-4 h-4"></i></button>
+                                    </li>
+                                `).join('')}
+                            </ul>
+                        </div>
+
+                        <div class="pt-6 border-t border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
+                            <div>
+                                ${uiState.showDeleteColabConfirm ? `
+                                    <div class="flex items-center gap-2 bg-red-100 p-2 rounded-lg">
+                                        <span class="text-sm text-red-800 font-medium">Confirmar exclusao?</span>
+                                        <button type="button" onclick="cadDeleteColab()" class="bg-red-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-red-700">Sim</button>
+                                        <button type="button" onclick="cadShowDeleteConfirm(false)" class="bg-white text-slate-700 border border-slate-300 px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-50">Cancelar</button>
+                                    </div>
+                                ` : `
+                                    <button type="button" onclick="cadShowDeleteConfirm(true)" class="text-red-600 hover:text-red-800 hover:bg-red-50 px-3 py-2 rounded-lg flex items-center font-medium text-sm">
+                                        <i data-lucide="trash-2" class="mr-2 w-4 h-4"></i> Excluir ficha
+                                    </button>
+                                `}
+                            </div>
+                            <div class="flex gap-3 w-full md:w-auto">
+                                <button type="button" onclick="cadCancelEdit()" class="flex-1 md:flex-none justify-center px-4 py-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg font-medium flex items-center">
+                                    <i data-lucide="x-circle" class="mr-2 w-4 h-4"></i> Cancelar
+                                </button>
+                                <button type="submit" class="flex-1 md:flex-none justify-center px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg font-medium flex items-center shadow-sm">
+                                    <i data-lucide="save" class="mr-2 w-4 h-4"></i> Salvar
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+    }
+
+    return `
+        <div class="space-y-4 md:space-y-6 animate-fade-in">
+            <button onclick="cadBackList()" class="text-blue-600 hover:underline flex items-center">
+                <i data-lucide="arrow-left" class="w-4 h-4 mr-1"></i> Voltar para lista
+            </button>
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="p-4 md:p-6 border-b border-slate-200 flex flex-col md:flex-row md:justify-between md:items-start gap-4">
+                    <div>
+                        <h2 class="text-xl md:text-2xl font-bold text-slate-800">${escapeHtml(colab.name)}</h2>
+                        <p class="text-sm md:text-base text-slate-500">${sectorLabel(colab.sector)} - ${escapeHtml(colab.role)} - ${escapeHtml(colab.shift)}</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="px-3 py-1 rounded-full text-xs md:text-sm font-medium ${colab.status === 'Ativo' ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-700'}">${escapeHtml(colab.status)}</span>
+                        <button onclick="cadEditColab()" class="bg-slate-50 text-slate-600 border border-slate-200 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 px-3 py-1.5 rounded-lg flex items-center text-sm font-medium shadow-sm">
+                            <i data-lucide="edit" class="mr-2 w-4 h-4"></i> Editar ficha
+                        </button>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 p-4 md:p-6">
+                    <section class="space-y-5">
+                        <div>
+                            <h3 class="text-lg font-semibold flex items-center mb-3"><i data-lucide="file-text" class="mr-2 w-5 h-5 text-blue-500"></i> Informacoes funcionais</h3>
+                            <div class="bg-slate-50 p-4 rounded-lg border border-slate-100 grid grid-cols-2 gap-4">
+                                <div><p class="text-xs text-slate-500">Admissao</p><p class="font-medium">${escapeHtml(colab.admission)}</p></div>
+                                <div><p class="text-xs text-slate-500">Tempo na funcao</p><p class="font-medium">${escapeHtml(colab.timeInRole || '-')}</p></div>
+                                <div><p class="text-xs text-slate-500">Setor</p><p class="font-medium">${sectorLabel(colab.sector)}</p></div>
+                            </div>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold flex items-center mb-3"><i data-lucide="book-open" class="mr-2 w-5 h-5 text-blue-500"></i> Treinamentos</h3>
+                            ${colab.trainings.length ? `<ul class="list-disc pl-5 text-slate-700">${colab.trainings.map(t => `<li>${escapeHtml(t)}</li>`).join('')}</ul>` : '<p class="text-sm text-slate-500 italic">Nenhum treinamento registrado.</p>'}
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold flex items-center mb-3"><i data-lucide="shield-alert" class="mr-2 w-5 h-5 text-red-500"></i> Advertencias</h3>
+                            ${colab.warnings.length ? colab.warnings.map(w => `
+                                <div class="bg-red-50/70 border border-red-200 rounded-lg p-4 text-sm mb-2">
+                                    <div class="font-bold text-red-800">${escapeHtml(w.date)}</div>
+                                    <p class="mt-1 text-slate-700">${escapeHtml(w.reason)}</p>
+                                </div>
+                            `).join('') : '<p class="text-sm text-slate-500 italic">Nenhuma advertencia registrada.</p>'}
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold flex items-center mb-3"><i data-lucide="alert-triangle" class="mr-2 w-5 h-5 text-orange-500"></i> Gaps reportados</h3>
+                            ${colab.gaps.length ? colab.gaps.map(g => `
+                                <div class="bg-orange-50/60 border border-orange-200 rounded-lg p-4 text-sm mb-2">
+                                    <div class="font-bold">${escapeHtml(g.date)} - Impacto: ${escapeHtml(g.impact)}</div>
+                                    <p class="mt-2"><strong>Gap:</strong> ${escapeHtml(g.gap)}</p>
+                                    <p class="mt-1"><strong>Medida:</strong> ${escapeHtml(g.measure)}</p>
+                                </div>
+                            `).join('') : '<p class="text-sm text-slate-500 italic">Nenhum gap reportado.</p>'}
+                        </div>
+                    </section>
+                    <section class="space-y-5">
+                        <div>
+                            <h3 class="text-lg font-semibold flex items-center mb-3"><i data-lucide="calendar-x" class="mr-2 w-5 h-5 text-purple-500"></i> Absenteismo</h3>
+                            ${colab.absenteismo.length ? colab.absenteismo.map(abs => `
+                                <div class="border border-slate-200 rounded-lg p-4 text-sm bg-white shadow-sm mb-2">
+                                    <div class="font-bold border-b pb-2">Data: ${escapeHtml(abs.date)}</div>
+                                    ${abs.justificados.length ? `<div class="text-green-700 mt-2"><strong>Justificado:</strong> ${abs.justificados.map(escapeHtml).join(', ')}</div>` : ''}
+                                    ${abs.naoJustificados.length ? `<div class="text-red-700 mt-2"><strong>Nao justificado:</strong> ${abs.naoJustificados.map(escapeHtml).join(', ')}</div>` : ''}
+                                    ${abs.image ? `<button onclick="openImageModal('${abs.image}')" class="mt-3 text-xs bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-1.5 rounded-lg flex items-center font-medium"><i data-lucide="image" class="w-4 h-4 mr-1.5"></i> Visualizar anexo</button>` : ''}
+                                </div>
+                            `).join('') : '<p class="text-sm text-slate-500 italic">Nenhum registro de ausencia.</p>'}
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold flex items-center mb-3"><i data-lucide="message-square" class="mr-2 w-5 h-5 text-indigo-500"></i> Feedbacks</h3>
+                            ${colab.feedbacks.length ? colab.feedbacks.map(fb => `
+                                <div class="bg-indigo-50/40 border border-indigo-100 rounded-lg p-4 text-sm mb-3 space-y-4">
+                                    <div class="font-bold text-slate-800">${escapeHtml(fb.date)}</div>
+                                    <div>
+                                        <h4 class="font-bold text-indigo-800 mb-1">1. Visao do Colaborador</h4>
+                                        <p><strong>O que deu certo?</strong> ${escapeHtml(fb.deuCerto || fb.positivos || '-')}</p>
+                                        <p class="mt-1"><strong>O que esta travando?</strong> ${escapeHtml(fb.travando || '-')}</p>
+                                        <p class="mt-1"><strong>Como posso ajudar?</strong> ${escapeHtml(fb.ajuda || '-')}</p>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-bold text-indigo-800 mb-1">2. Visao do Lider</h4>
+                                        <p><strong>Reconhecimento:</strong> ${escapeHtml(fb.reconhecimento || '-')}</p>
+                                        <p class="mt-1"><strong>Ponto de ajuste:</strong> ${escapeHtml(fb.pontoAjuste || fb.melhorar || '-')}</p>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-bold text-indigo-800 mb-1">3. Plano de Acao</h4>
+                                        <p><strong>Comece:</strong> ${escapeHtml(fb.comece || '-')}</p>
+                                        <p class="mt-1"><strong>Pare:</strong> ${escapeHtml(fb.pare || '-')}</p>
+                                        <p class="mt-1"><strong>Continue:</strong> ${escapeHtml(fb.continuar || fb.continue || '-')}</p>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-bold text-indigo-800 mb-1">4. Foco Final</h4>
+                                        <p><strong>Acao principal:</strong> ${escapeHtml(fb.acaoPrincipal || '-')}</p>
+                                        <p class="mt-1"><strong>Proxima conversa em:</strong> ${escapeHtml(formatDateBr(fb.proximaConversa))}</p>
+                                    </div>
+                                </div>
+                            `).join('') : '<p class="text-sm text-slate-500 italic">Nenhum feedback registrado.</p>'}
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function compEditClick(id) {
+    uiState.editingCompId = id;
+    uiState.editCompForm = { ...db.competencies.find(c => c.id === id) };
+    uiState.showDeleteCompConfirm = null;
+    renderApp();
+}
+
+function compUpdateField(field, value) {
+    uiState.editCompForm[field] = value;
+}
+
+function compUpdateMandatory(value) {
+    uiState.editCompForm.mandatory = value === 'true';
+}
+
+async function compSave() {
+    if (!uiState.editCompForm.name.trim()) return;
+    db.competencies = db.competencies.map(c => c.id === uiState.editingCompId ? normalizeCompetency(uiState.editCompForm) : c);
+    const saved = await saveData();
+    if (!saved) return;
+    uiState.editingCompId = null;
+    uiState.editCompForm = null;
+    showToast('Competencia atualizada.');
+    renderApp();
+}
+
+function compCancelEdit() {
+    uiState.editingCompId = null;
+    uiState.editCompForm = null;
+    renderApp();
+}
+
+function compShowDelete(id) {
+    uiState.showDeleteCompConfirm = id;
+    renderApp();
+}
+
+async function compDelete(id) {
+    db.competencies = db.competencies.filter(c => c.id !== id);
+    db.collaborators = db.collaborators.map(c => {
+        const scores = { ...c.scores };
+        delete scores[id];
+        return { ...c, scores };
+    });
+    const saved = await saveData();
+    if (!saved) return;
+    uiState.showDeleteCompConfirm = null;
+    uiState.editingCompId = null;
+    showToast('Competencia removida.');
+    renderApp();
+}
+
+function renderCompetencias() {
+    const filtered = db.competencies.filter(c => !uiState.compFilterSector || c.sector === uiState.compFilterSector);
+    return `
+        <div class="space-y-4 md:space-y-6 animate-fade-in">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <h2 class="text-xl md:text-2xl font-bold text-slate-800">Gestao de Competencias</h2>
+                <select onchange="compSetSectorFilter(this.value)" class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-blue-500">
+                    ${sectorOptions(uiState.compFilterSector, 'Todos os setores')}
+                </select>
+            </div>
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden overflow-x-auto">
+                <table class="w-full text-left border-collapse min-w-[760px]">
+                    <thead>
+                        <tr class="bg-slate-50 border-b border-slate-200">
+                            <th class="p-4 font-semibold text-slate-600 text-sm">Nome</th>
+                            <th class="p-4 font-semibold text-slate-600 text-sm">Setor</th>
+                            <th class="p-4 font-semibold text-slate-600 text-sm">Categoria</th>
+                            <th class="p-4 font-semibold text-slate-600 text-sm">Obrigatoria</th>
+                            <th class="p-4 font-semibold text-slate-600 text-sm text-center">Acoes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${filtered.map(c => {
+                            if (uiState.editingCompId === c.id) {
+                                const f = uiState.editCompForm;
+                                return `
+                                    <tr class="border-b border-blue-200 bg-blue-50/40">
+                                        <td class="p-2"><input type="text" value="${escapeHtml(f.name)}" onchange="compUpdateField('name', this.value)" class="w-full border border-slate-300 rounded p-2 text-sm outline-none"></td>
+                                        <td class="p-2">
+                                            <select onchange="compUpdateField('sector', this.value)" class="w-full border border-slate-300 rounded p-2 text-sm outline-none">
+                                                ${sectorOptions(f.sector)}
+                                            </select>
+                                        </td>
+                                        <td class="p-2">
+                                            <select onchange="compUpdateField('category', this.value)" class="w-full border border-slate-300 rounded p-2 text-sm outline-none">
+                                                <option value="Operacional" ${f.category === 'Operacional' ? 'selected' : ''}>Operacional</option>
+                                                <option value="Comportamental" ${f.category === 'Comportamental' ? 'selected' : ''}>Comportamental</option>
+                                            </select>
+                                        </td>
+                                        <td class="p-2">
+                                            <select onchange="compUpdateMandatory(this.value)" class="w-full border border-slate-300 rounded p-2 text-sm outline-none">
+                                                <option value="true" ${f.mandatory ? 'selected' : ''}>Sim</option>
+                                                <option value="false" ${!f.mandatory ? 'selected' : ''}>Nao</option>
+                                            </select>
+                                        </td>
+                                        <td class="p-2 text-center">
+                                            <button onclick="compSave()" class="text-green-600 hover:bg-green-100 p-2 rounded" title="Salvar"><i data-lucide="save" class="w-4 h-4"></i></button>
+                                            <button onclick="compCancelEdit()" class="text-slate-500 hover:bg-slate-200 p-2 rounded" title="Cancelar"><i data-lucide="x" class="w-4 h-4"></i></button>
+                                        </td>
+                                    </tr>
+                                `;
+                            }
+                            return `
+                                <tr class="border-b border-slate-100 hover:bg-slate-50">
+                                    <td class="p-4 font-medium">${escapeHtml(c.name)}</td>
+                                    <td class="p-4">${sectorLabel(c.sector)}</td>
+                                    <td class="p-4"><span class="px-2 py-1 rounded text-xs font-medium ${c.category === 'Operacional' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}">${escapeHtml(c.category)}</span></td>
+                                    <td class="p-4">${c.mandatory ? 'Sim' : 'Nao'}</td>
+                                    <td class="p-4 text-center">
+                                        ${uiState.showDeleteCompConfirm === c.id ? `
+                                            <button onclick="compDelete('${c.id}')" class="bg-red-600 text-white px-2 py-1 rounded text-xs">Excluir</button>
+                                            <button onclick="compShowDelete(null)" class="bg-slate-200 text-slate-700 px-2 py-1 rounded text-xs">Cancelar</button>
+                                        ` : `
+                                            <button onclick="compEditClick('${c.id}')" class="text-blue-500 hover:bg-blue-100 p-2 rounded" title="Editar"><i data-lucide="edit-2" class="w-4 h-4"></i></button>
+                                            <button onclick="compShowDelete('${c.id}')" class="text-red-500 hover:bg-red-100 p-2 rounded" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                        `}
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+}
+
+function compSetSectorFilter(value) {
+    uiState.compFilterSector = value;
+    renderApp();
+}
+
+function matrizSetFilterShift(value) {
+    uiState.filterShift = value;
+    renderApp();
+}
+
+function matrizSetFilterRole(value) {
+    uiState.filterRole = value;
+    renderApp();
+}
+
+function renderMatriz(sector = SECTOR_EXPEDICAO) {
+    const filtered = db.collaborators.filter(c => {
+        if (c.sector !== sector) return false;
+        if (uiState.filterShift && c.shift !== uiState.filterShift) return false;
+        if (uiState.filterRole && c.role !== uiState.filterRole) return false;
+        return true;
+    });
+    const competencies = getCompetenciesBySector(sector);
+    const dot = score => {
+        const styles = {
+            0: 'bg-white border-slate-200 shadow-inner',
+            1: 'bg-yellow-400 border-yellow-500 shadow-sm ring-2 ring-yellow-100',
+            2: 'bg-orange-500 border-orange-600 shadow-sm ring-2 ring-orange-100',
+            3: 'bg-green-500 border-green-600 shadow-md ring-2 ring-green-200 scale-110'
+        };
+        return `<div class="flex justify-center items-center w-full h-full py-1"><div class="w-5 h-5 md:w-6 md:h-6 rounded-full border-2 ${styles[score] || styles[0]}" title="Nivel ${score}"></div></div>`;
+    };
+    const compactLevel = score => ({
+        0: 'bg-white border-slate-200 text-slate-500',
+        1: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+        2: 'bg-orange-50 border-orange-200 text-orange-800',
+        3: 'bg-green-50 border-green-200 text-green-800'
+    }[score] || 'bg-white border-slate-200 text-slate-500');
+    const compactDot = score => ({
+        0: 'bg-white border-slate-300',
+        1: 'bg-yellow-400 border-yellow-500',
+        2: 'bg-orange-500 border-orange-600',
+        3: 'bg-green-500 border-green-600'
+    }[score] || 'bg-white border-slate-300');
+
+    return `
+        <div class="space-y-4 md:space-y-6 animate-fade-in">
+            <h2 class="text-xl md:text-2xl font-bold text-slate-800">Matriz de Competencias (ILUO) - ${sectorLabel(sector)}</h2>
+            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+                <div class="flex flex-col sm:flex-row gap-3 w-full xl:w-auto">
+                    <select onchange="matrizSetFilterShift(this.value)" class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 w-full sm:w-auto bg-slate-50">
+                        <option value="">Todos os turnos</option>
+                        ${shiftsList.map(s => `<option value="${s}" ${uiState.filterShift === s ? 'selected' : ''}>${s}</option>`).join('')}
+                    </select>
+                    <select onchange="matrizSetFilterRole(this.value)" class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 w-full sm:w-auto bg-slate-50">
+                        <option value="">Todas as funcoes</option>
+                        ${rolesList.map(r => `<option value="${r}" ${uiState.filterRole === r ? 'selected' : ''}>${r}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="flex flex-wrap items-center gap-3 text-xs md:text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <span class="flex items-center gap-1.5"><span class="w-4 h-4 rounded-full border-2 bg-white border-slate-200"></span>N0</span>
+                    <span class="flex items-center gap-1.5"><span class="w-4 h-4 rounded-full border-2 bg-yellow-400 border-yellow-500"></span>N1</span>
+                    <span class="flex items-center gap-1.5"><span class="w-4 h-4 rounded-full border-2 bg-orange-500 border-orange-600"></span>N2</span>
+                    <span class="flex items-center gap-1.5"><span class="w-4 h-4 rounded-full border-2 bg-green-500 border-green-600"></span>N3</span>
+                </div>
+            </div>
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-md overflow-hidden relative">
+                <div class="md:hidden divide-y divide-slate-100">
+                    ${filtered.map(colab => `
+                        <section class="p-4">
+                            <div class="mb-3">
+                                <h3 class="font-bold text-slate-800">${escapeHtml(colab.name)}</h3>
+                                <p class="text-xs text-slate-500">${escapeHtml(colab.role)} - ${escapeHtml(colab.shift)}</p>
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                ${competencies.map(comp => {
+                                    const score = colab.scores[comp.id] || 0;
+                                    return `
+                                        <div class="border rounded-lg px-3 py-2 ${compactLevel(score)}">
+                                            <div class="flex items-center justify-between gap-2">
+                                                <span class="text-xs font-semibold leading-snug whitespace-normal">${escapeHtml(comp.name)}</span>
+                                                <span class="shrink-0 w-4 h-4 rounded-full border-2 ${compactDot(score)}" title="Nivel ${score}"></span>
+                                            </div>
+                                            <div class="text-[11px] mt-1 font-medium">N${score}</div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </section>
+                    `).join('') || `
+                        <div class="p-8 text-center text-slate-500">Nenhum colaborador encontrado para ${sectorLabel(sector)}.</div>
+                    `}
+                </div>
+                <div class="hidden md:block overflow-x-auto custom-scrollbar">
+                    <table class="w-full text-left border-collapse whitespace-nowrap min-w-[800px]">
+                        <thead>
+                            <tr>
+                                <th class="p-4 border-b border-slate-200 bg-slate-50 font-bold text-slate-800 sticky left-0 z-20 min-w-[200px]">Colaborador</th>
+                                ${competencies.map(comp => `
+                                    <th class="p-3 border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600 text-center w-24 align-bottom">
+                                        <div class="writing-vertical-rl transform -rotate-180 h-40 flex items-center justify-center m-auto">${escapeHtml(comp.name)}</div>
+                                    </th>
+                                `).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${filtered.map((colab, index) => `
+                                <tr class="${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-blue-50/50">
+                                    <td class="p-4 border-b border-slate-100 font-medium text-slate-800 sticky left-0 z-10 bg-inherit">
+                                        <div class="font-semibold">${escapeHtml(colab.name)}</div>
+                                        <div class="text-xs text-slate-500 font-normal">${escapeHtml(colab.role)}</div>
+                                    </td>
+                                    ${competencies.map(comp => `<td class="p-2 border-b border-slate-100 text-center">${dot(colab.scores[comp.id] || 0)}</td>`).join('')}
+                                </tr>
+                            `).join('') || `
+                                <tr>
+                                    <td colspan="${competencies.length + 1}" class="p-8 text-center text-slate-500">Nenhum colaborador encontrado para ${sectorLabel(sector)}.</td>
+                                </tr>
+                            `}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderPolivalencia(sector = SECTOR_EXPEDICAO) {
+    const competencies = getCompetenciesBySector(sector);
+    const ranking = db.collaborators.filter(c => c.sector === sector).map(c => {
+        const masteredCount = competencies.filter(comp => (c.scores[comp.id] || 0) >= 2).length;
+        const percent = masteredCount / (competencies.length || 1);
+        const stars = percent >= 0.8 ? 5 : percent >= 0.6 ? 4 : percent >= 0.4 ? 3 : percent >= 0.2 ? 2 : percent > 0 ? 1 : 0;
+        return { ...c, masteredCount, stars };
+    }).sort((a, b) => b.masteredCount - a.masteredCount);
+
+    return `
+        <div class="space-y-4 md:space-y-6 animate-fade-in">
+            <h2 class="text-xl md:text-2xl font-bold text-slate-800">Ranking de Polivalencia - ${sectorLabel(sector)}</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+                ${ranking.map((colab, index) => `
+                    <div class="bg-white p-5 md:p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col relative overflow-hidden">
+                        ${index === 0 ? '<div class="absolute top-0 right-0 bg-yellow-400 text-yellow-900 text-xs font-bold px-3 py-1 rounded-bl-lg">#1</div>' : ''}
+                        <h3 class="text-base md:text-lg font-bold text-slate-800 pr-12">${escapeHtml(colab.name)}</h3>
+                        <p class="text-xs md:text-sm text-slate-500 mb-4">${escapeHtml(colab.role)}</p>
+                        <div class="flex items-center mb-2">
+                            <span class="text-3xl font-bold text-blue-600 mr-2">${colab.masteredCount}</span>
+                            <span class="text-sm text-slate-600">competencias dominadas<br>(nivel 2 ou 3)</span>
+                        </div>
+                        <div class="flex text-yellow-400 mt-auto pt-4 border-t border-slate-100">
+                            ${Array.from({ length: 5 }).map((_, i) => `<i data-lucide="star" class="w-5 h-5 ${i < colab.stars ? 'fill-current text-yellow-400' : 'text-slate-200'}"></i>`).join('')}
+                        </div>
+                    </div>
+                `).join('') || '<div class="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500">Nenhum colaborador encontrado para este setor.</div>'}
+            </div>
+        </div>
+    `;
+}
+
+function absenteeismHandleFile(input) {
+    const file = input.files[0];
+    if (!file) {
+        uiState.tempAbsenteismoImage = null;
+        return;
+    }
+    if (file.type === 'application/pdf') {
+        showToast('PDF selecionado. Para visualizacao, prefira imagem.', 'error');
+        uiState.tempAbsenteismoImage = null;
+        return;
+    }
+    const reader = new FileReader();
+    reader.onload = event => { uiState.tempAbsenteismoImage = event.target.result; };
+    reader.readAsDataURL(file);
+}
+
+function absenteeismToggleOutro(checkbox) {
+    const input = document.getElementById('absOutroObs');
+    input.disabled = !checkbox.checked;
+    if (!checkbox.checked) input.value = '';
+    if (checkbox.checked) input.focus();
+}
+
+async function absenteeismSubmit(event) {
+    event.preventDefault();
+    const colabId = document.getElementById('absColab').value;
+    const date = document.getElementById('absDate').value;
+    const justificados = Array.from(document.querySelectorAll('input[name="justificado"]:checked')).map(el => el.value);
+    const naoJustificados = Array.from(document.querySelectorAll('input[name="naoJustificado"]:checked')).map(el => el.value);
+    const outroObs = document.getElementById('absOutroObs').value.trim();
+
+    if (!colabId || !date) {
+        showToast('Preencha colaborador e data.', 'error');
+        return;
+    }
+    if (!justificados.length && !naoJustificados.length) {
+        showToast('Selecione ao menos um motivo.', 'error');
+        return;
+    }
+    const finalJustificados = justificados.map(value => value === 'Outro' && outroObs ? `Outro: ${outroObs}` : value);
+    db.collaborators = db.collaborators.map(c => {
+        if (c.id !== colabId) return c;
+        return normalizeCollaborator({
+            ...c,
+            absenteismo: [...c.absenteismo, { date, justificados: finalJustificados, naoJustificados, image: uiState.tempAbsenteismoImage }],
+            history: [{ date: todayBr(), event: 'Entrevista de absenteismo registrada' }, ...c.history]
+        });
+    });
+    const saved = await saveData();
+    if (!saved) return;
+    uiState.tempAbsenteismoImage = null;
+    showToast('Entrevista gravada com sucesso!');
+    event.target.reset();
+}
+
+function renderAbsenteismo() {
+    return `
+        <div class="space-y-6 animate-fade-in max-w-4xl mx-auto">
+            <h2 class="text-2xl font-bold text-slate-800">Entrevista de Absenteismo</h2>
+            <form onsubmit="absenteeismSubmit(event)" class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-8">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <label class="block text-sm font-semibold text-slate-700">Colaborador
+                        <select id="absColab" required class="mt-1 w-full border border-slate-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 bg-slate-50 outline-none">
+                            <option value="">-- Selecione --</option>
+                            ${db.collaborators.filter(c => c.status !== 'Desligado').map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}
+                        </select>
+                    </label>
+                    <label class="block text-sm font-semibold text-slate-700">Data da ausencia
+                        <input type="date" id="absDate" required class="mt-1 w-full border border-slate-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 bg-slate-50 outline-none">
+                    </label>
+                    <label class="md:col-span-2 block text-sm font-semibold text-slate-700">Anexar imagem
+                        <input type="file" accept="image/*" onchange="absenteeismHandleFile(this)" class="mt-1 w-full border border-slate-300 rounded-lg p-2 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200">
+                    </label>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 pt-6 border-t border-slate-100">
+                    <div>
+                        <h3 class="font-bold text-green-700 mb-4 flex items-center"><i data-lucide="check-circle" class="mr-2 w-5 h-5"></i> Motivo justificado</h3>
+                        <div class="space-y-3 bg-green-50/50 p-4 rounded-xl border border-green-100">
+                            ${['Saude com atestado', 'Licenca paternidade', 'Licenca maternidade', 'Casamento', 'Falecimento proximo'].map(m => `
+                                <label class="flex items-center cursor-pointer">
+                                    <input type="checkbox" name="justificado" value="${m}" class="w-4 h-4 text-green-600 rounded border-slate-300">
+                                    <span class="ml-3 text-sm font-medium">${m}</span>
+                                </label>
+                            `).join('')}
+                            <label class="flex flex-col cursor-pointer mt-2">
+                                <span class="flex items-center">
+                                    <input type="checkbox" name="justificado" value="Outro" onchange="absenteeismToggleOutro(this)" class="w-4 h-4 text-green-600 rounded">
+                                    <span class="ml-3 text-sm font-medium">Outro</span>
+                                </span>
+                                <input type="text" id="absOutroObs" disabled placeholder="Descreva..." class="mt-2 ml-7 border border-slate-300 rounded p-2 text-sm outline-none disabled:bg-slate-100 disabled:opacity-50">
+                            </label>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-red-700 mb-4 flex items-center"><i data-lucide="alert-triangle" class="mr-2 w-5 h-5"></i> Motivo nao justificado</h3>
+                        <div class="space-y-3 bg-red-50/50 p-4 rounded-xl border border-red-100">
+                            ${['Descontentamento', 'Saude sem atestado', 'Problemas pessoais', 'Problemas familiares', 'Transporte', 'Ausencia 3 dias'].map(m => `
+                                <label class="flex items-center cursor-pointer">
+                                    <input type="checkbox" name="naoJustificado" value="${m}" class="w-4 h-4 text-red-600 rounded border-slate-300">
+                                    <span class="ml-3 text-sm font-medium">${m}</span>
+                                </label>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+                <div class="pt-6 border-t border-slate-200 flex justify-end">
+                    <button type="submit" class="bg-blue-600 text-white font-medium py-3 px-8 rounded-lg hover:bg-blue-700 flex items-center shadow-md">
+                        <i data-lucide="save" class="mr-2 w-5 h-5"></i> Gravar entrevista
+                    </button>
+                </div>
+            </form>
+        </div>
+    `;
+}
+
+function adminSetTab(tab) {
+    uiState.activeAdminTab = tab;
+    renderApp();
+}
+
+function adminEvalColabChange(value) {
+    uiState.evalColabId = value;
+    uiState.evalCheckedItems.clear();
+    renderApp();
+}
+
+function adminEvalCompChange(value) {
+    uiState.evalCompId = value;
+    uiState.evalCheckedItems.clear();
+    renderApp();
+}
+
+function adminSetEvalSector(value) {
+    uiState.evalSector = value;
+    uiState.evalColabId = '';
+    uiState.evalCompId = '';
+    uiState.evalCheckedItems.clear();
+    renderApp();
+}
+
+function adminSetGapSector(value) {
+    uiState.gapSector = value;
+    renderApp();
+}
+
+function adminSetFeedbackSector(value) {
+    uiState.feedbackSector = value;
+    renderApp();
+}
+
+function adminToggleCheck(id) {
+    if (uiState.evalCheckedItems.has(id)) uiState.evalCheckedItems.delete(id);
+    else uiState.evalCheckedItems.add(id);
+    renderApp();
+}
+
+async function adminSaveEval(event) {
+    event.preventDefault();
+    if (!uiState.evalColabId || !uiState.evalCompId) {
+        showToast('Selecione colaborador e competencia.', 'error');
+        return;
+    }
+    const level = scoreToLevel(uiState.evalCheckedItems.size);
+    const compName = db.competencies.find(comp => comp.id === uiState.evalCompId)?.name || 'Competencia';
+    db.collaborators = db.collaborators.map(c => {
+        if (c.id !== uiState.evalColabId) return c;
+        return normalizeCollaborator({
+            ...c,
+            scores: { ...c.scores, [uiState.evalCompId]: level },
+            history: [{ date: todayBr(), event: `Avaliacao: ${compName} - ${levelLabel(level)}` }, ...c.history]
+        });
+    });
+    const saved = await saveData();
+    if (!saved) return;
+    uiState.evalCheckedItems.clear();
+    showToast('Avaliacao salva com sucesso.');
+    renderApp();
+}
+
+async function adminAddColab(event) {
+    event.preventDefault();
+    const name = document.getElementById('newColabName').value.trim();
+    if (!name) return;
+    const newColab = normalizeCollaborator({
+        id: `col${Date.now()}`,
+        name,
+        role: document.getElementById('newColabRole').value,
+        sector: document.getElementById('newColabSector').value,
+        shift: document.getElementById('newColabShift').value,
+        admission: document.getElementById('newColabAdmissao').value || new Date().toISOString().split('T')[0],
+        status: 'Ativo',
+        timeInRole: 'Recem adicionado',
+        warnings: [],
+        trainings: [],
+        history: [{ date: todayBr(), event: 'Adicionado via sistema' }],
+        scores: {},
+        gaps: [],
+        absenteismo: [],
+        feedbacks: []
+    });
+    db.collaborators.push(newColab);
+    const saved = await saveData();
+    if (!saved) return;
+    showToast('Colaborador adicionado com sucesso.');
+    event.target.reset();
+    renderApp();
+}
+
+async function adminAddComp(event) {
+    event.preventDefault();
+    const name = document.getElementById('newCompName').value.trim();
+    if (!name) return;
+    db.competencies.push({
+        id: `c${Date.now()}`,
+        name,
+        sector: document.getElementById('newCompSector').value,
+        category: document.getElementById('newCompCategory').value,
+        mandatory: document.getElementById('newCompMandatory').value === 'true'
+    });
+    const saved = await saveData();
+    if (!saved) return;
+    showToast('Competencia adicionada com sucesso.');
+    event.target.reset();
+    renderApp();
+}
+
+async function adminAddGap(event) {
+    event.preventDefault();
+    const colabId = document.getElementById('gapColab').value;
+    if (!colabId) return;
+    db.collaborators = db.collaborators.map(c => {
+        if (c.id !== colabId) return c;
+        return normalizeCollaborator({
+            ...c,
+            gaps: [...c.gaps, {
+                date: todayBr(),
+                gap: document.getElementById('gapText').value,
+                impact: document.getElementById('gapImpact').value,
+                measure: document.getElementById('gapMeasure').value || 'Nenhuma medida registrada.'
+            }]
+        });
+    });
+    const saved = await saveData();
+    if (!saved) return;
+    showToast('Gap enviado para a ficha.');
+    event.target.reset();
+    renderApp();
+}
+
+async function adminAddFeedback(event) {
+    event.preventDefault();
+    const colabId = document.getElementById('fbColab').value;
+    if (!colabId) return;
+    db.collaborators = db.collaborators.map(c => {
+        if (c.id !== colabId) return c;
+        return normalizeCollaborator({
+            ...c,
+            feedbacks: [...c.feedbacks, {
+                date: todayBr(),
+                deuCerto: document.getElementById('fbDeuCerto').value,
+                travando: document.getElementById('fbTravando').value,
+                ajuda: document.getElementById('fbAjuda').value,
+                reconhecimento: document.getElementById('fbReconhecimento').value,
+                pontoAjuste: document.getElementById('fbPontoAjuste').value,
+                comece: document.getElementById('fbComece').value,
+                pare: document.getElementById('fbPare').value,
+                continuar: document.getElementById('fbContinue').value,
+                acaoPrincipal: document.getElementById('fbAcaoPrincipal').value,
+                proximaConversa: document.getElementById('fbProximaConversa').value
+            }]
+        });
+    });
+    const saved = await saveData();
+    if (!saved) return;
+    showToast('Feedback registrado com sucesso.');
+    event.target.reset();
+    renderApp();
+}
+
+async function adminResetData() {
+    if (!confirm('Deseja apagar os dados do Supabase e restaurar os dados iniciais?')) return;
+    localStorage.removeItem(STORAGE_COLLABORATORS);
+    localStorage.removeItem(STORAGE_COMPETENCIES);
+    db.collaborators = JSON.parse(JSON.stringify(initialCollaborators)).map(normalizeCollaborator);
+    db.competencies = JSON.parse(JSON.stringify(initialCompetencies)).map(normalizeCompetency);
+    const saved = await saveData();
+    if (!saved) return;
+    uiState.selectedColabId = null;
+    showToast('Dados restaurados.');
+    renderApp();
+}
+
+function renderAdministracao() {
+    const tab = uiState.activeAdminTab;
+    const selectedEvalSector = uiState.evalSector || SECTOR_EXPEDICAO;
+    const evalCollaborators = db.collaborators.filter(c => c.status !== 'Desligado' && c.sector === selectedEvalSector);
+    const evalCompetencies = getCompetenciesBySector(selectedEvalSector);
+    const gapCollaborators = uiState.gapSector ? db.collaborators.filter(c => c.sector === uiState.gapSector) : [];
+    const feedbackCollaborators = uiState.feedbackSector ? db.collaborators.filter(c => c.sector === uiState.feedbackSector) : [];
+    const currentLevel = scoreToLevel(uiState.evalCheckedItems.size);
+    const levelInfo = {
+        0: { label: 'Nao treinado (N0)', color: 'bg-slate-100 text-slate-600 border-slate-300', dot: 'bg-white border-slate-300' },
+        1: { label: 'Em treino (N1)', color: 'bg-yellow-50 text-yellow-800 border-yellow-300', dot: 'bg-yellow-400 border-yellow-500' },
+        2: { label: 'Autonomo (N2)', color: 'bg-orange-50 text-orange-800 border-orange-300', dot: 'bg-orange-500 border-orange-600' },
+        3: { label: 'Especialista (N3)', color: 'bg-green-50 text-green-800 border-green-300', dot: 'bg-green-500 border-green-600' }
+    };
+    const tabs = [
+        { id: 'avaliacao', label: 'Avaliacao Digital', icon: 'clipboard-check' },
+        { id: 'colab', label: 'Novo Colaborador', icon: 'user-plus' },
+        { id: 'comp', label: 'Nova Competencia', icon: 'file-plus' },
+        { id: 'gaps', label: 'Report de Gaps', icon: 'alert-triangle' },
+        { id: 'feedback', label: 'Feedback', icon: 'message-square' }
+    ];
+
+    return `
+        <div class="space-y-4 md:space-y-6 animate-fade-in">
+            <h2 class="text-xl md:text-2xl font-bold text-slate-800">Administracao do Sistema</h2>
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 border-b border-slate-200 bg-slate-50 p-2 gap-2">
+                    ${tabs.map(item => `
+                        <button onclick="adminSetTab('${item.id}')" class="py-3 px-3 rounded-lg font-medium text-sm flex justify-center items-center transition-colors ${tab === item.id ? 'bg-white text-blue-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:bg-slate-100'}">
+                            <i data-lucide="${item.icon}" class="mr-2 w-5 h-5"></i> ${item.label}
+                        </button>
+                    `).join('')}
+                </div>
+                <div class="p-4 md:p-6">
+                    ${tab === 'avaliacao' ? `
+                        <form onsubmit="adminSaveEval(event)" class="space-y-6 max-w-3xl mx-auto">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <label class="block text-sm font-semibold text-slate-700">Setor
+                                    <select id="evalSector" onchange="adminSetEvalSector(this.value)" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white">
+                                        ${sectorOptions(selectedEvalSector)}
+                                    </select>
+                                </label>
+                                <label class="block text-sm font-semibold text-slate-700">Colaborador avaliado
+                                    <select id="evalColabId" onchange="adminEvalColabChange(this.value)" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white">
+                                        <option value="">-- Selecione --</option>
+                                        ${evalCollaborators.map(c => `<option value="${c.id}" ${uiState.evalColabId === c.id ? 'selected' : ''}>${escapeHtml(c.name)} (${escapeHtml(c.role)})</option>`).join('')}
+                                    </select>
+                                </label>
+                                <label class="block text-sm font-semibold text-slate-700">Competencia
+                                    <select id="evalCompId" onchange="adminEvalCompChange(this.value)" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white">
+                                        <option value="">-- Selecione --</option>
+                                        ${evalCompetencies.map(c => `<option value="${c.id}" ${uiState.evalCompId === c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
+                                    </select>
+                                </label>
+                            </div>
+                            <div class="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                                <div class="bg-slate-50 p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4">
+                                    <span class="font-semibold text-slate-700">Checklist de avaliacao</span>
+                                    <div class="px-4 py-1.5 rounded-full border flex items-center text-sm font-bold shadow-sm ${levelInfo[currentLevel].color}">
+                                        <div class="w-3 h-3 rounded-full border-2 mr-2 ${levelInfo[currentLevel].dot}"></div>
+                                        Nivel calculado: ${levelInfo[currentLevel].label}
+                                    </div>
+                                </div>
+                                <div class="p-4 space-y-3 bg-white">
+                                    ${evaluationCriteria.map(item => `
+                                        <label class="flex items-start p-3 rounded-lg border border-slate-100 hover:bg-slate-50 cursor-pointer">
+                                            <input type="checkbox" onchange="adminToggleCheck(${item.id})" class="mt-0.5 w-5 h-5 text-blue-600 rounded border-slate-300 focus:ring-blue-500" ${uiState.evalCheckedItems.has(item.id) ? 'checked' : ''}>
+                                            <span class="ml-3 text-sm text-slate-700 font-medium">${escapeHtml(item.text)}</span>
+                                        </label>
+                                    `).join('')}
+                                </div>
+                                <div class="bg-slate-50 p-4 border-t border-slate-200 flex justify-end">
+                                    <button type="submit" class="bg-blue-600 text-white font-medium py-2 px-6 rounded-lg hover:bg-blue-700 shadow-sm">Gravar avaliacao</button>
+                                </div>
+                            </div>
+                        </form>
+                    ` : ''}
+                    ${tab === 'colab' ? `
+                        <form onsubmit="adminAddColab(event)" class="space-y-4 max-w-2xl mx-auto">
+                            <label class="block text-sm font-medium text-slate-700">Nome completo
+                                <input type="text" id="newColabName" required class="mt-1 w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Ex: Ana Souza">
+                            </label>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <label class="block text-sm font-medium text-slate-700">Funcao
+                                    <select id="newColabRole" class="mt-1 w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">${rolesList.map(r => `<option value="${r}">${r}</option>`).join('')}</select>
+                                </label>
+                                <label class="block text-sm font-medium text-slate-700">Setor
+                                    <select id="newColabSector" class="mt-1 w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">${sectorOptions(SECTOR_EXPEDICAO)}</select>
+                                </label>
+                                <label class="block text-sm font-medium text-slate-700">Turno
+                                    <select id="newColabShift" class="mt-1 w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">${shiftsList.map(s => `<option value="${s}">${s}</option>`).join('')}</select>
+                                </label>
+                            </div>
+                            <label class="block text-sm font-medium text-slate-700">Data de admissao
+                                <input type="date" id="newColabAdmissao" class="mt-1 w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                            </label>
+                            <button type="submit" class="bg-blue-600 text-white font-medium py-2 px-6 rounded-lg hover:bg-blue-700 w-full sm:w-auto">Salvar colaborador</button>
+                        </form>
+                    ` : ''}
+                    ${tab === 'comp' ? `
+                        <form onsubmit="adminAddComp(event)" class="space-y-4 max-w-2xl mx-auto">
+                            <label class="block text-sm font-medium text-slate-700">Nome da competencia
+                                <input type="text" id="newCompName" required class="mt-1 w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Ex: Operacao Empilhadeira">
+                            </label>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <label class="block text-sm font-medium text-slate-700">Setor
+                                    <select id="newCompSector" class="mt-1 w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                                        ${sectorOptions(SECTOR_EXPEDICAO)}
+                                    </select>
+                                </label>
+                                <label class="block text-sm font-medium text-slate-700">Categoria
+                                    <select id="newCompCategory" class="mt-1 w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                                        <option value="Operacional">Operacional</option>
+                                        <option value="Comportamental">Comportamental</option>
+                                    </select>
+                                </label>
+                                <label class="block text-sm font-medium text-slate-700">Obrigatoria
+                                    <select id="newCompMandatory" class="mt-1 w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                                        <option value="true">Sim</option>
+                                        <option value="false">Nao</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <button type="submit" class="bg-blue-600 text-white font-medium py-2 px-6 rounded-lg hover:bg-blue-700 w-full sm:w-auto">Salvar competencia</button>
+                        </form>
+                    ` : ''}
+                    ${tab === 'gaps' ? `
+                        <form onsubmit="adminAddGap(event)" class="space-y-5 max-w-3xl mx-auto">
+                            <label class="block text-sm font-semibold">Setor
+                                <select id="gapSector" required onchange="adminSetGapSector(this.value)" class="mt-1 w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-orange-500">
+                                    ${sectorOptions(uiState.gapSector, '-- Selecione o setor --')}
+                                </select>
+                            </label>
+                            <label class="block text-sm font-semibold">Colaborador
+                                <select id="gapColab" required ${uiState.gapSector ? '' : 'disabled'} class="mt-1 w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-orange-500 disabled:bg-slate-100 disabled:text-slate-400">
+                                    <option value="">-- Selecione o colaborador --</option>
+                                    ${gapCollaborators.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}
+                                </select>
+                            </label>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+                                <label class="md:col-span-2 block text-sm font-semibold">Gap / ocorrencia
+                                    <input type="text" id="gapText" required class="mt-1 w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-orange-500">
+                                </label>
+                                <label class="block text-sm font-semibold">Impacto
+                                    <select id="gapImpact" class="mt-1 w-full border border-slate-300 rounded-lg p-3 outline-none">
+                                        <option value="Baixo">Baixo</option>
+                                        <option value="Medio" selected>Medio</option>
+                                        <option value="Alto">Alto</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <label class="block text-sm font-semibold">Medida tomada
+                                <textarea id="gapMeasure" rows="3" class="mt-1 w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-orange-500"></textarea>
+                            </label>
+                            <button type="submit" class="bg-orange-600 text-white font-medium py-3 px-8 rounded-lg hover:bg-orange-700 shadow-md flex items-center">
+                                <i data-lucide="send" class="mr-2 w-5 h-5"></i> Enviar para ficha
+                            </button>
+                        </form>
+                    ` : ''}
+                    ${tab === 'feedback' ? `
+                        <form onsubmit="adminAddFeedback(event)" class="space-y-6 max-w-3xl mx-auto">
+                            <label class="block text-sm font-semibold">Setor
+                                <select id="fbSector" required onchange="adminSetFeedbackSector(this.value)" class="mt-1 w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-indigo-500">
+                                    ${sectorOptions(uiState.feedbackSector, '-- Selecione o setor --')}
+                                </select>
+                            </label>
+                            <label class="block text-sm font-semibold">Colaborador
+                                <select id="fbColab" required ${uiState.feedbackSector ? '' : 'disabled'} class="mt-1 w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-400">
+                                    <option value="">-- Selecione o colaborador --</option>
+                                    ${feedbackCollaborators.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}
+                                </select>
+                            </label>
+
+                            <section class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
+                                <h3 class="font-bold text-slate-800 flex items-center"><i data-lucide="user-round" class="mr-2 w-5 h-5 text-indigo-500"></i> 1. Visao do Colaborador</h3>
+                                <label class="block text-sm font-semibold text-slate-700">O que deu certo? <span class="font-normal text-slate-500">(principais entregas e vitorias do ciclo)</span>
+                                    <textarea id="fbDeuCerto" required rows="3" class="mt-1 w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-indigo-500"></textarea>
+                                </label>
+                                <label class="block text-sm font-semibold text-slate-700">O que esta travando? <span class="font-normal text-slate-500">(desafios ou obstaculos atuais)</span>
+                                    <textarea id="fbTravando" required rows="3" class="mt-1 w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-indigo-500"></textarea>
+                                </label>
+                                <label class="block text-sm font-semibold text-slate-700">Como posso ajudar? <span class="font-normal text-slate-500">(o que voce precisa de mim como lider?)</span>
+                                    <textarea id="fbAjuda" required rows="3" class="mt-1 w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-indigo-500"></textarea>
+                                </label>
+                            </section>
+
+                            <section class="bg-blue-50/60 border border-blue-100 rounded-xl p-4 space-y-4">
+                                <h3 class="font-bold text-blue-900 flex items-center"><i data-lucide="clipboard-list" class="mr-2 w-5 h-5 text-blue-600"></i> 2. Visao do Lider</h3>
+                                <label class="block text-sm font-semibold text-slate-700">Reconhecimento <span class="font-normal text-slate-500">(cite 1 ou 2 exemplos especificos de algo excelente)</span>
+                                    <textarea id="fbReconhecimento" required rows="3" class="mt-1 w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-blue-500"></textarea>
+                                </label>
+                                <label class="block text-sm font-semibold text-slate-700">Ponto de ajuste <span class="font-normal text-slate-500">(1 comportamento ou resultado para mudar no proximo ciclo)</span>
+                                    <textarea id="fbPontoAjuste" required rows="3" class="mt-1 w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-blue-500"></textarea>
+                                </label>
+                            </section>
+
+                            <section class="bg-emerald-50/60 border border-emerald-100 rounded-xl p-4 space-y-4">
+                                <h3 class="font-bold text-emerald-900 flex items-center"><i data-lucide="list-checks" class="mr-2 w-5 h-5 text-emerald-600"></i> 3. Plano de Acao: Comece, Pare, Continue</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <label class="block text-sm font-semibold text-slate-700">Comece
+                                        <textarea id="fbComece" required rows="4" class="mt-1 w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-emerald-500"></textarea>
+                                    </label>
+                                    <label class="block text-sm font-semibold text-slate-700">Pare
+                                        <textarea id="fbPare" required rows="4" class="mt-1 w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-emerald-500"></textarea>
+                                    </label>
+                                    <label class="block text-sm font-semibold text-slate-700">Continue
+                                        <textarea id="fbContinue" required rows="4" class="mt-1 w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-emerald-500"></textarea>
+                                    </label>
+                                </div>
+                            </section>
+
+                            <section class="bg-amber-50/60 border border-amber-100 rounded-xl p-4 space-y-4">
+                                <h3 class="font-bold text-amber-900 flex items-center"><i data-lucide="target" class="mr-2 w-5 h-5 text-amber-600"></i> 4. Foco Final</h3>
+                                <label class="block text-sm font-semibold text-slate-700">Acao principal ate a proxima reuniao
+                                    <textarea id="fbAcaoPrincipal" required rows="3" class="mt-1 w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-amber-500"></textarea>
+                                </label>
+                                <label class="block text-sm font-semibold text-slate-700">Proxima conversa em
+                                    <input type="date" id="fbProximaConversa" required class="mt-1 w-full border border-slate-300 rounded-lg p-3 outline-none focus:border-amber-500">
+                                </label>
+                            </section>
+
+                            <button type="submit" class="bg-indigo-600 text-white font-medium py-3 px-8 rounded-lg hover:bg-indigo-700 shadow-md flex items-center">
+                                <i data-lucide="save" class="mr-2 w-5 h-5"></i> Guardar feedback
+                            </button>
+                        </form>
+                    ` : ''}
+                </div>
+                <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-end">
+                    <button onclick="adminResetData()" class="text-slate-500 hover:text-red-600 text-sm flex items-center">
+                        <i data-lucide="rotate-ccw" class="mr-1 w-4 h-4"></i> Restaurar dados iniciais
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderApp() {
+    if (!currentSession) return;
+    if (!isDataLoaded) {
+        renderLoadingState();
+        return;
+    }
+    if (uiState.activeTab === 'matriz') uiState.activeTab = 'matriz-exp';
+    if (uiState.activeTab === 'polivalencia') uiState.activeTab = 'polivalencia-exp';
+    renderNav();
+    const container = document.getElementById('app-content');
+    const views = {
+        dashboard: renderDashboard,
+        cadastro: renderCadastro,
+        competencias: renderCompetencias,
+        'matriz-exp': () => renderMatriz(SECTOR_EXPEDICAO),
+        'matriz-out': () => renderMatriz(SECTOR_OUTBOUND),
+        'polivalencia-exp': () => renderPolivalencia(SECTOR_EXPEDICAO),
+        'polivalencia-out': () => renderPolivalencia(SECTOR_OUTBOUND),
+        absenteismo: renderAbsenteismo,
+        admin: renderAdministracao
+    };
+    container.innerHTML = (views[uiState.activeTab] || renderDashboard)();
+    createIcons();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    createIcons();
+    checkAuth();
+});
+</script>
+</body>
+</html>
