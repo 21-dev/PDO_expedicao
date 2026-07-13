@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestao PDO - Expedicao e Outbound</title>
+    <title>Gestao PDO - Expedicao</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Chart.js alimenta o radar da avaliacao; o restante do modulo e vanilla JS. -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         body { font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -30,7 +32,7 @@
                     <i data-lucide="shield-alert" class="w-8 h-8"></i>
                 </div>
                 <h1 class="text-2xl font-bold text-slate-800">Gestao PDO</h1>
-                <p class="text-sm text-slate-500 mt-1">Acesso restrito - Expedicao e Outbound</p>
+                <p class="text-sm text-slate-500 mt-1">Acesso restrito - Expedicao</p>
             </div>
 
             <form onsubmit="doLogin(event)" class="space-y-5">
@@ -79,7 +81,7 @@
                         <i data-lucide="shield-alert" class="mr-2 text-blue-500 w-6 h-6"></i>
                         Gestao PDO
                     </h1>
-                    <p class="text-[10px] text-slate-500 mt-1 uppercase tracking-wider font-semibold">Expedicao e Outbound</p>
+                    <p class="text-[10px] text-slate-500 mt-1 uppercase tracking-wider font-semibold">Expedicao</p>
                 </div>
                 <button class="md:hidden text-slate-400 hover:text-white" onclick="toggleMobileMenu()" aria-label="Fechar menu">
                     <i data-lucide="x" class="w-6 h-6"></i>
@@ -124,8 +126,7 @@ const SUPABASE_STATE_TABLE = 'pdo_app_state';
 const APP_STATE_COLLABORATORS = 'collaborators';
 const APP_STATE_COMPETENCIES = 'competencies';
 const SECTOR_EXPEDICAO = 'Expedicao';
-const SECTOR_OUTBOUND = 'Outbound';
-const sectorsList = [SECTOR_EXPEDICAO, SECTOR_OUTBOUND];
+const sectorsList = [SECTOR_EXPEDICAO];
 
 const initialCompetencies = [
     { id: 'c1', name: 'Triagem B2C', category: 'Operacional', mandatory: true, sector: SECTOR_EXPEDICAO },
@@ -133,9 +134,6 @@ const initialCompetencies = [
     { id: 'c3', name: 'Conferencia B2C', category: 'Operacional', mandatory: true, sector: SECTOR_EXPEDICAO },
     { id: 'c4', name: 'Conferencia B2B', category: 'Operacional', mandatory: true, sector: SECTOR_EXPEDICAO },
     { id: 'c5', name: 'Expedicao', category: 'Operacional', mandatory: true, sector: SECTOR_EXPEDICAO },
-    { id: 'c6', name: 'Analise de Base', category: 'Operacional', mandatory: false, sector: SECTOR_OUTBOUND },
-    { id: 'c7', name: 'Exportacao', category: 'Operacional', mandatory: false, sector: SECTOR_OUTBOUND },
-    { id: 'c8', name: 'Devolucao', category: 'Operacional', mandatory: true, sector: SECTOR_OUTBOUND },
     { id: 'c9', name: 'Trabalho em equipe', category: 'Comportamental', mandatory: true, sector: SECTOR_EXPEDICAO },
     { id: 'c10', name: 'Seguranca', category: 'Comportamental', mandatory: true, sector: SECTOR_EXPEDICAO }
 ];
@@ -153,24 +151,7 @@ const initialCollaborators = [
         warnings: [],
         trainings: ['NR-11', 'Lideranca', 'Integracao'],
         history: [{ date: '10/01/2024', event: 'Promocao para Lider' }],
-        scores: { c1: 3, c2: 3, c3: 3, c4: 2, c5: 3, c6: 1, c7: 0, c8: 3, c9: 3, c10: 3 },
-        gaps: [],
-        absenteismo: [],
-        feedbacks: []
-    },
-    {
-        id: 'col2',
-        name: 'Joao Souza',
-        role: 'Operador de Logistica',
-        sector: SECTOR_OUTBOUND,
-        shift: '2 Turno',
-        admission: '2023-08-01',
-        status: 'Ativo',
-        timeInRole: '10 meses',
-        warnings: [{ date: '20/02/2024', reason: 'Atraso reincidente na chegada ao turno.' }],
-        trainings: ['Integracao'],
-        history: [{ date: '20/02/2024', event: 'Advertencia aplicada' }],
-        scores: { c1: 2, c2: 1, c3: 2, c4: 1, c5: 2, c6: 0, c7: 0, c8: 1, c9: 2, c10: 3 },
+        scores: { c1: 3, c2: 3, c3: 3, c4: 2, c5: 3, c9: 3, c10: 3 },
         gaps: [],
         absenteismo: [],
         feedbacks: []
@@ -178,7 +159,69 @@ const initialCollaborators = [
 ];
 
 const shiftsList = ['1 Turno', '2 Turno', '3 Turno', 'Comercial'];
-const rolesList = ['Lider Operacional', 'Operador de Logistica', 'Auxiliar de Expedicao', 'Conferente'];
+const rolesList = [
+    'Lider Operacional',
+    'Assistente Operacional I',
+    'Assistente Operacional II',
+    'Auxiliar Operacional'
+];
+
+// Converte nomenclaturas antigas ao carregar fichas ja existentes.
+const legacyRoleMap = {
+    'Operador de Logistica': 'Assistente Operacional I',
+    'Conferente': 'Assistente Operacional II',
+    'Auxiliar de Expedicao': 'Auxiliar Operacional'
+};
+
+// Estrutura modular da avaliacao de expedicao. Os pesos dos blocos somam 100%.
+const performanceBlocks = [
+    {
+        id: 'hardSkills',
+        title: 'Hard Skills / Metricas',
+        description: 'Resultados objetivos do processo de expedicao.',
+        weight: 50,
+        color: 'blue',
+        criteria: [
+            { id: 'produtividade', label: 'Produtividade', question: 'Entrega o volume planejado por hora/turno com constancia?' },
+            { id: 'acuracidade', label: 'Acuracidade', question: 'Separa, confere e expede sem divergencias de item ou quantidade?' },
+            { id: 'slaCarregamento', label: 'SLA de carregamento', question: 'Cumpre as janelas e prioridades de carregamento definidas?' },
+            { id: 'absenteismo', label: 'Assiduidade', question: 'Mantem presenca e pontualidade sem comprometer a escala?' }
+        ]
+    },
+    {
+        id: 'qualidadeSeguranca',
+        title: 'Qualidade e Seguranca',
+        description: 'Disciplina operacional, prevencao e cuidado com o pedido.',
+        weight: 25,
+        color: 'emerald',
+        criteria: [
+            { id: 'cincoS', label: '5S', question: 'Mantem posto, doca e equipamentos limpos, identificados e organizados?' },
+            { id: 'epi', label: 'Uso de EPI', question: 'Utiliza corretamente os EPIs e segue as regras de seguranca?' },
+            { id: 'zeloCarga', label: 'Zelo com a carga', question: 'Movimenta, acondiciona e entrega a carga sem avarias?' }
+        ]
+    },
+    {
+        id: 'softSkills',
+        title: 'Soft Skills',
+        description: 'Comportamentos que sustentam a fluidez entre pessoas e turnos.',
+        weight: 25,
+        color: 'violet',
+        criteria: [
+            { id: 'resolucaoProblemas', label: 'Resolucao na ponta', question: 'Identifica desvios e busca uma solucao segura antes de escalar?' },
+            { id: 'passagemTurno', label: 'Passagem de turno', question: 'Comunica pendencias, riscos e prioridades com clareza e registro?' },
+            { id: 'trabalhoEquipe', label: 'Trabalho em equipe', question: 'Coopera com o time e equilibra o fluxo nos momentos de pico?' }
+        ]
+    }
+];
+
+// Escala ancorada reduz subjetividade entre diferentes lideres.
+const performanceScale = {
+    1: 'Muito abaixo: nao atende, mesmo com acompanhamento',
+    2: 'Abaixo: atende parcialmente e precisa de apoio frequente',
+    3: 'Esperado: atende ao padrao da funcao com autonomia',
+    4: 'Acima: supera o esperado com consistencia',
+    5: 'Referencia: desempenho excepcional e multiplica boas praticas'
+};
 const evaluationCriteria = [
     { id: 1, text: 'Recebeu instrucao do processo e sabe onde consultar os procedimentos (POP)' },
     { id: 2, text: 'Consegue executar a atividade com acompanhamento ou supervisao' },
@@ -191,19 +234,18 @@ const evaluationCriteria = [
 
 const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard' },
+    { id: 'desempenho', label: 'Desempenho', icon: 'radar' },
     { id: 'cadastro', label: 'Fichas Funcionais', icon: 'users' },
     { id: 'competencias', label: 'Competencias', icon: 'book-open' },
-    { id: 'matriz-exp', label: 'Matriz Exp.', icon: 'grid' },
-    { id: 'matriz-out', label: 'Matriz Out.', icon: 'grid-3x3' },
-    { id: 'polivalencia-exp', label: 'Polivalencia Exp.', icon: 'star' },
-    { id: 'polivalencia-out', label: 'Polivalencia Out.', icon: 'sparkles' },
+    { id: 'matriz-exp', label: 'Matriz de Competencias', icon: 'grid' },
+    { id: 'polivalencia-exp', label: 'Polivalencia', icon: 'star' },
     { id: 'absenteismo', label: 'Absenteismo', icon: 'calendar-x' }
 ];
 
-let db = {
-    collaborators: JSON.parse(JSON.stringify(initialCollaborators)).map(normalizeCollaborator),
-    competencies: JSON.parse(JSON.stringify(initialCompetencies)).map(normalizeCompetency)
-};
+let db = buildExpeditionState(
+    JSON.parse(JSON.stringify(initialCollaborators)),
+    JSON.parse(JSON.stringify(initialCompetencies))
+);
 
 let uiState = {
     activeTab: 'dashboard',
@@ -221,11 +263,17 @@ let uiState = {
     evalSector: '',
     gapSector: '',
     feedbackSector: '',
-    activeAdminTab: 'avaliacao',
+    activeAdminTab: 'colab',
     evalColabId: '',
     evalCompId: '',
     evalCheckedItems: new Set(),
-    tempAbsenteismoImage: null
+    tempAbsenteismoImage: null,
+    performanceColabId: '',
+    performanceSector: SECTOR_EXPEDICAO,
+    performanceCompId: '',
+    performanceCompCheckedItems: new Set(),
+    pdiGoalCount: 1,
+    fichaRecordEditor: null
 };
 
 let supabaseClient = null;
@@ -254,11 +302,16 @@ function loadLocalArray(key, fallback) {
     }
 }
 
+function isExpeditionRecord(record) {
+    // Registros antigos sem setor pertencem ao modelo original de Expedicao.
+    return !record?.sector || record.sector === SECTOR_EXPEDICAO;
+}
+
 function getFallbackState() {
-    return {
-        collaborators: loadLocalArray(STORAGE_COLLABORATORS, initialCollaborators).map(normalizeCollaborator),
-        competencies: loadLocalArray(STORAGE_COMPETENCIES, initialCompetencies).map(normalizeCompetency)
-    };
+    return buildExpeditionState(
+        loadLocalArray(STORAGE_COLLABORATORS, initialCollaborators),
+        loadLocalArray(STORAGE_COMPETENCIES, initialCompetencies)
+    );
 }
 
 async function loadData() {
@@ -287,12 +340,12 @@ async function loadData() {
             ? rows[APP_STATE_COMPETENCIES]
             : localFallback.competencies;
 
-        db = {
-            collaborators: collaborators.map(normalizeCollaborator),
-            competencies: competencies.map(normalizeCompetency)
-        };
+        const expeditionCollaborators = collaborators.filter(isExpeditionRecord);
+        const expeditionCompetencies = competencies.filter(isExpeditionRecord);
+        const removedNonExpeditionRecords = expeditionCollaborators.length !== collaborators.length || expeditionCompetencies.length !== competencies.length;
+        db = buildExpeditionState(collaborators, competencies);
 
-        if (!rows[APP_STATE_COLLABORATORS] || !rows[APP_STATE_COMPETENCIES]) {
+        if (!rows[APP_STATE_COLLABORATORS] || !rows[APP_STATE_COMPETENCIES] || removedNonExpeditionRecords) {
             await saveData(false);
         }
 
@@ -308,27 +361,62 @@ async function loadData() {
 function normalizeCollaborator(c) {
     return {
         ...c,
-        sector: sectorsList.includes(c.sector) ? c.sector : SECTOR_EXPEDICAO,
+        sector: SECTOR_EXPEDICAO,
+        role: legacyRoleMap[c.role] || c.role || 'Auxiliar Operacional',
         warnings: c.warnings || [],
         trainings: c.trainings || [],
         history: c.history || [],
         scores: c.scores || {},
         gaps: c.gaps || [],
         absenteismo: c.absenteismo || [],
-        feedbacks: c.feedbacks || []
+        feedbacks: c.feedbacks || [],
+        // Campos novos sao normalizados para manter compatibilidade com dados antigos.
+        performanceEvaluations: c.performanceEvaluations || [],
+        competencyEvaluations: c.competencyEvaluations || [],
+        logbook: c.logbook || [],
+        pdiGoals: c.pdiGoals || []
     };
 }
 
 function normalizeCompetency(c) {
     return {
         ...c,
-        sector: sectorsList.includes(c.sector) ? c.sector : SECTOR_EXPEDICAO,
-        mandatory: Boolean(c.mandatory)
+        sector: SECTOR_EXPEDICAO,
+        mandatory: Boolean(c.mandatory),
+        // Mantem competencias antigas compativeis com o novo cadastro avancado.
+        advanced: {
+            targetProficiency: c.advanced?.targetProficiency || 'Intermediario',
+            renewal: {
+                required: Boolean(c.advanced?.renewal?.required),
+                validityMonths: c.advanced?.renewal?.required ? Number(c.advanced?.renewal?.validityMonths) || 12 : null
+            },
+            prerequisiteIds: Array.isArray(c.advanced?.prerequisiteIds) ? c.advanced.prerequisiteIds : [],
+            criticality: c.advanced?.criticality || 'Media',
+            evidenceMethod: c.advanced?.evidenceMethod || 'Observacao pratica'
+        }
     };
 }
 
+function buildExpeditionState(collaborators, competencies) {
+    const normalizedCompetencies = competencies.filter(isExpeditionRecord).map(normalizeCompetency);
+    const validCompetencyIds = new Set(normalizedCompetencies.map(item => item.id));
+    const cleanedCompetencies = normalizedCompetencies.map(item => ({
+        ...item,
+        advanced: {
+            ...item.advanced,
+            prerequisiteIds: item.advanced.prerequisiteIds.filter(id => validCompetencyIds.has(id))
+        }
+    }));
+    const cleanedCollaborators = collaborators.filter(isExpeditionRecord).map(normalizeCollaborator).map(collaborator => ({
+        ...collaborator,
+        scores: Object.fromEntries(Object.entries(collaborator.scores).filter(([id]) => validCompetencyIds.has(id))),
+        competencyEvaluations: collaborator.competencyEvaluations.filter(item => validCompetencyIds.has(item.competencyId))
+    }));
+    return { collaborators: cleanedCollaborators, competencies: cleanedCompetencies };
+}
+
 function sectorLabel(sector) {
-    return sector === SECTOR_OUTBOUND ? 'Outbound' : 'Expedicao';
+    return 'Expedicao';
 }
 
 function sectorOptions(selected, includeAllLabel = '') {
@@ -363,6 +451,14 @@ function formatDateBr(value) {
     const parts = String(value).split('-');
     if (parts.length !== 3) return value;
     return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
+
+function toIsoInputDate(value) {
+    if (!value) return '';
+    const text = String(value);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+    const parts = text.split('/');
+    return parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : '';
 }
 
 async function saveData(showSuccess = false) {
@@ -563,85 +659,116 @@ function levelLabel(level) {
 
 function renderDashboard() {
     const active = db.collaborators.filter(c => c.status !== 'Desligado');
+    const evaluated = active.filter(c => c.performanceEvaluations.length);
+    const pendingPdis = active.flatMap(c => c.pdiGoals).filter(goal => goal.status !== 'Concluida');
+    const overduePdis = pendingPdis.filter(goal => goal.deadline && goal.deadline < todayIsoLocal());
+    const warningCount = active.reduce((total, c) => total + c.warnings.length, 0);
+
+    const requiredSlots = active.reduce((total, collaborator) =>
+        total + getCompetenciesBySector(collaborator.sector).filter(comp => comp.mandatory).length, 0);
+    const autonomousSlots = active.reduce((total, collaborator) =>
+        total + getCompetenciesBySector(collaborator.sector).filter(comp => comp.mandatory && Number(collaborator.scores[comp.id]) >= 2).length, 0);
+    const coverage = requiredSlots ? Math.round((autonomousSlots / requiredSlots) * 100) : 0;
+    const averagePerformance = evaluated.length
+        ? evaluated.reduce((sum, c) => sum + Number(c.performanceEvaluations[0].finalScore || 0), 0) / evaluated.length
+        : 0;
 
     const alerts = [];
-    db.competencies.forEach(comp => {
-        const sectorActive = active.filter(c => c.sector === comp.sector);
-        const specialistsCount = sectorActive.filter(c => c.scores[comp.id] === 3).length;
-        const trainingCount = sectorActive.filter(c => c.scores[comp.id] === 1).length;
-        const sector = sectorLabel(comp.sector);
-        if (specialistsCount < 2) alerts.push({ type: 'danger', msg: `[${sector}] A competencia "${comp.name}" possui apenas ${specialistsCount} especialista(s).` });
-        if (specialistsCount > 0 && trainingCount === 0) alerts.push({ type: 'warning', msg: `[${sector}] O processo "${comp.name}" nao possui sucessao em treinamento.` });
-    });
-
-    const dangerCount = alerts.filter(a => a.type === 'danger').length;
     const sectorStats = sectorsList.map(sector => {
         const people = getActiveCollaboratorsBySector(sector);
+        const competencies = getCompetenciesBySector(sector);
+        const totalSlots = people.length * competencies.length;
+        const coveredSlots = people.reduce((total, person) => total + competencies.filter(comp => Number(person.scores[comp.id]) >= 2).length, 0);
+        const sectorCoverage = totalSlots ? Math.round((coveredSlots / totalSlots) * 100) : 0;
+        const evaluatedPeople = people.filter(person => person.performanceEvaluations.length);
+        const performanceAverage = evaluatedPeople.length
+            ? evaluatedPeople.reduce((sum, person) => sum + Number(person.performanceEvaluations[0].finalScore || 0), 0) / evaluatedPeople.length
+            : 0;
+
+        competencies.forEach(comp => {
+            const specialists = people.filter(person => Number(person.scores[comp.id]) === 3).length;
+            const minimum = ['Alta', 'Critica'].includes(comp.advanced?.criticality) ? 2 : 1;
+            if (specialists < minimum) alerts.push({
+                type: comp.advanced?.criticality === 'Critica' ? 'danger' : 'warning',
+                sector,
+                message: `${comp.name}: ${specialists} multiplicador(es); recomendado ${minimum}.`
+            });
+        });
+
         return {
             sector,
-            collaborators: people.length,
-            specialists: people.filter(c => Object.values(c.scores).some(score => score === 3)).length,
-            inTraining: people.filter(c => Object.values(c.scores).some(score => score === 1)).length
+            people: people.length,
+            competencies: competencies.length,
+            coverage: sectorCoverage,
+            performanceAverage,
+            pendingPdis: people.reduce((total, person) => total + person.pdiGoals.filter(goal => goal.status !== 'Concluida').length, 0)
         };
     });
 
+    if (overduePdis.length) alerts.unshift({ type: 'danger', sector: '', message: `${overduePdis.length} meta(s) de PDI estao com prazo vencido.` });
+
+    const recentEvaluations = active.flatMap(collaborator => [
+        ...collaborator.performanceEvaluations.map(item => ({
+            collaborator: collaborator.name,
+            label: `Desempenho · ${item.cycle}`,
+            date: item.date,
+            result: Number(item.finalScore || 0).toFixed(2)
+        })),
+        ...collaborator.competencyEvaluations.map(item => ({
+            collaborator: collaborator.name,
+            label: item.competencyName,
+            date: item.date,
+            result: levelLabel(item.level)
+        }))
+    ]).sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 6);
+
+    const cards = [
+        { label: 'Colaboradores ativos', value: active.length, detail: `${sectorsList.length} setores monitorados`, icon: 'users', style: 'blue' },
+        { label: 'Cobertura obrigatoria', value: `${coverage}%`, detail: `${autonomousSlots} de ${requiredSlots} dominios`, icon: 'shield-check', style: coverage >= 80 ? 'emerald' : 'amber' },
+        { label: 'Media de desempenho', value: averagePerformance.toFixed(2), detail: `${evaluated.length} avaliado(s)`, icon: 'radar', style: 'violet' },
+        { label: 'PDIs em andamento', value: pendingPdis.length, detail: `${overduePdis.length} vencido(s)`, icon: 'target', style: overduePdis.length ? 'red' : 'emerald' },
+        { label: 'Advertencias', value: warningCount, detail: 'historico total ativo', icon: 'shield-alert', style: warningCount ? 'red' : 'slate' }
+    ];
+    const cardStyle = {
+        blue: 'bg-blue-50 border-blue-100 text-blue-600', emerald: 'bg-emerald-50 border-emerald-100 text-emerald-600',
+        amber: 'bg-amber-50 border-amber-100 text-amber-600', violet: 'bg-violet-50 border-violet-100 text-violet-600',
+        red: 'bg-red-50 border-red-100 text-red-600', slate: 'bg-slate-50 border-slate-200 text-slate-500'
+    };
+
     return `
         <div class="space-y-6 animate-fade-in">
-            <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-2">
-                <div>
-                    <h2 class="text-xl md:text-2xl font-bold text-slate-800">Gestao PDO - Expedicao e Outbound</h2>
-                    <p class="text-sm text-slate-500">Visao separada por Expedicao e Outbound, com alertas consolidados.</p>
-                </div>
-                <div class="bg-white border border-slate-200 rounded-lg px-4 py-3 shadow-sm flex items-center gap-2 text-red-600">
-                    <i data-lucide="shield-alert" class="w-5 h-5"></i>
-                    <span class="text-sm font-semibold">${dangerCount} alertas criticos</span>
-                </div>
+            <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+                <div><p class="text-xs font-bold uppercase tracking-widest text-blue-600">Visao executiva operacional</p><h2 class="text-2xl font-bold text-slate-900 mt-1">Dashboard PDO</h2><p class="text-sm text-slate-500 mt-1">Cobertura tecnica, desempenho e pontos de atencao da Expedicao.</p></div>
+                <div class="flex gap-2"><button onclick="navigate('desempenho')" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-lg flex items-center"><i data-lucide="clipboard-check" class="w-4 h-4 mr-2"></i>Avaliar colaborador</button></div>
             </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+                ${cards.map(card => `<article class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm"><div class="w-9 h-9 rounded-lg border flex items-center justify-center ${cardStyle[card.style]}"><i data-lucide="${card.icon}" class="w-5 h-5"></i></div><strong class="block text-2xl text-slate-900 mt-3">${card.value}</strong><span class="block text-xs font-semibold text-slate-700 mt-0.5">${card.label}</span><span class="block text-[11px] text-slate-400 mt-1">${card.detail}</span></article>`).join('')}
+            </div>
+
             <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
                 ${sectorStats.map(stat => `
-                    <section class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 md:p-5">
-                        <div class="flex items-center justify-between mb-4">
-                            <h3 class="text-lg font-bold text-slate-800">${sectorLabel(stat.sector)}</h3>
-                            <span class="text-xs uppercase tracking-wide text-slate-500 bg-slate-100 px-2 py-1 rounded">${stat.sector}</span>
-                        </div>
-                        <div class="grid grid-cols-3 gap-3">
-                            <div class="rounded-lg border border-blue-100 bg-blue-50 p-3 text-center">
-                                <i data-lucide="users" class="text-blue-500 mb-1 w-5 h-5 mx-auto"></i>
-                                <div class="text-2xl font-bold text-slate-800">${stat.collaborators}</div>
-                                <div class="text-xs text-slate-500">Colaboradores</div>
-                            </div>
-                            <div class="rounded-lg border border-green-100 bg-green-50 p-3 text-center">
-                                <i data-lucide="award" class="text-green-500 mb-1 w-5 h-5 mx-auto"></i>
-                                <div class="text-2xl font-bold text-slate-800">${stat.specialists}</div>
-                                <div class="text-xs text-slate-500">Especialistas</div>
-                            </div>
-                            <div class="rounded-lg border border-yellow-100 bg-yellow-50 p-3 text-center">
-                                <i data-lucide="clock" class="text-yellow-500 mb-1 w-5 h-5 mx-auto"></i>
-                                <div class="text-2xl font-bold text-slate-800">${stat.inTraining}</div>
-                                <div class="text-xs text-slate-500">Em treino</div>
-                            </div>
-                        </div>
+                    <section class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                        <div class="flex justify-between items-start gap-3"><div><h3 class="text-lg font-bold text-slate-900">${sectorLabel(stat.sector)}</h3><p class="text-xs text-slate-500">${stat.people} pessoas · ${stat.competencies} competencias</p></div><span class="text-xs font-bold px-2.5 py-1 rounded-full ${stat.coverage >= 80 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}">${stat.coverage}% coberto</span></div>
+                        <div class="mt-5"><div class="flex justify-between text-xs mb-1.5"><span class="text-slate-500">Cobertura de competencias</span><strong>${stat.coverage}%</strong></div><div class="h-2 bg-slate-100 rounded-full overflow-hidden"><div class="h-full rounded-full ${stat.coverage >= 80 ? 'bg-emerald-500' : 'bg-amber-500'}" style="width:${stat.coverage}%"></div></div></div>
+                        <div class="grid grid-cols-2 gap-3 mt-5"><div class="bg-slate-50 rounded-lg p-3"><span class="text-xs text-slate-500">Media desempenho</span><strong class="block text-xl mt-1">${stat.performanceAverage.toFixed(2)}</strong></div><div class="bg-slate-50 rounded-lg p-3"><span class="text-xs text-slate-500">PDIs pendentes</span><strong class="block text-xl mt-1">${stat.pendingPdis}</strong></div></div>
                     </section>
                 `).join('')}
             </div>
-            <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 md:p-6">
-                <h3 class="text-lg font-semibold text-slate-800 mb-4 flex items-center">
-                    <i data-lucide="alert-triangle" class="mr-2 text-orange-500 w-5 h-5"></i>
-                    Alertas do Sistema
-                </h3>
-                <div class="space-y-3">
-                    ${alerts.length ? alerts.map(alert => `
-                        <div class="p-3 md:p-4 rounded-lg flex items-start text-sm md:text-base ${alert.type === 'danger' ? 'bg-red-50 border border-red-200 text-red-800' : 'bg-yellow-50 border border-yellow-200 text-yellow-800'}">
-                            <i data-lucide="alert-triangle" class="mr-3 shrink-0 ${alert.type === 'danger' ? 'text-red-500' : 'text-yellow-500'} w-5 h-5"></i>
-                            <span>${escapeHtml(alert.msg)}</span>
-                        </div>
-                    `).join('') : `
-                        <div class="p-4 bg-green-50 border border-green-200 text-green-800 rounded-lg flex items-center text-sm md:text-base">
-                            <i data-lucide="check-circle" class="mr-2 shrink-0 w-5 h-5"></i>
-                            Operacao saudavel. Nenhum alerta critico no momento.
-                        </div>
-                    `}
-                </div>
+
+            <div class="grid grid-cols-1 xl:grid-cols-5 gap-4">
+                <section class="xl:col-span-3 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                    <div class="flex justify-between items-center mb-4"><div><h3 class="font-bold text-slate-900">Prioridades operacionais</h3><p class="text-xs text-slate-500">Riscos de sucessao e prazos que pedem acao.</p></div><span class="text-xs font-bold text-red-600">${alerts.filter(item => item.type === 'danger').length} critico(s)</span></div>
+                    <div class="space-y-2 max-h-80 overflow-y-auto custom-scrollbar">
+                        ${alerts.length ? alerts.slice(0, 10).map(alert => `<div class="p-3 rounded-lg border flex items-start gap-3 ${alert.type === 'danger' ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'}"><i data-lucide="${alert.type === 'danger' ? 'circle-alert' : 'triangle-alert'}" class="w-4 h-4 mt-0.5 shrink-0 ${alert.type === 'danger' ? 'text-red-600' : 'text-amber-600'}"></i><div><span class="text-[10px] uppercase font-bold text-slate-400">${alert.sector ? sectorLabel(alert.sector) : 'Geral'}</span><p class="text-sm text-slate-700">${escapeHtml(alert.message)}</p></div></div>`).join('') : '<div class="text-center py-10 text-emerald-700"><i data-lucide="circle-check" class="w-8 h-8 mx-auto mb-2"></i><p class="text-sm font-semibold">Nenhuma prioridade critica no momento.</p></div>'}
+                    </div>
+                </section>
+                <section class="xl:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                    <h3 class="font-bold text-slate-900">Avaliacoes recentes</h3><p class="text-xs text-slate-500 mt-1">Ultimas movimentacoes registradas.</p>
+                    <div class="mt-4 divide-y divide-slate-100">
+                        ${recentEvaluations.length ? recentEvaluations.map(item => `<div class="py-3 flex justify-between gap-3"><div class="min-w-0"><strong class="block text-sm truncate">${escapeHtml(item.collaborator)}</strong><span class="block text-xs text-slate-500 truncate">${escapeHtml(item.label)} · ${formatDateBr(item.date)}</span></div><span class="text-xs font-bold text-blue-700 shrink-0">${escapeHtml(item.result)}</span></div>`).join('') : '<p class="text-sm text-slate-500 py-10 text-center">Nenhuma avaliacao registrada.</p>'}
+                    </div>
+                </section>
             </div>
         </div>
     `;
@@ -654,12 +781,25 @@ function getSelectedColab() {
 function cadViewColab(id) {
     uiState.selectedColabId = id;
     uiState.isEditingColab = false;
+    uiState.fichaRecordEditor = null;
+    renderApp();
+}
+
+function openCollaboratorPerformance(id) {
+    const collaborator = db.collaborators.find(c => c.id === id);
+    if (!collaborator) return;
+    uiState.performanceSector = collaborator.sector;
+    uiState.performanceColabId = collaborator.id;
+    uiState.performanceCompId = '';
+    uiState.performanceCompCheckedItems.clear();
+    uiState.activeTab = 'desempenho';
     renderApp();
 }
 
 function cadBackList() {
     uiState.selectedColabId = null;
     uiState.isEditingColab = false;
+    uiState.fichaRecordEditor = null;
     renderApp();
 }
 
@@ -700,6 +840,125 @@ function cadAddWarning() {
 function cadRemoveWarning(index) {
     uiState.editColabForm.warnings.splice(index, 1);
     renderApp();
+}
+
+const fichaRecordCollections = {
+    warning: 'warnings',
+    gap: 'gaps',
+    performance: 'performanceEvaluations',
+    absence: 'absenteismo'
+};
+
+function openFichaRecordEditor(type, index) {
+    const collaborator = getSelectedColab();
+    const collection = fichaRecordCollections[type];
+    if (!collaborator || !collection || !collaborator[collection]?.[index]) return;
+    uiState.fichaRecordEditor = {
+        type,
+        index,
+        record: JSON.parse(JSON.stringify(collaborator[collection][index]))
+    };
+    renderApp();
+}
+
+function closeFichaRecordEditor() {
+    uiState.fichaRecordEditor = null;
+    renderApp();
+}
+
+async function deleteFichaRecord(type, index) {
+    const collaborator = getSelectedColab();
+    const collection = fichaRecordCollections[type];
+    if (!collaborator || !collection || !collaborator[collection]?.[index]) return;
+    const labels = { warning: 'advertencia', gap: 'gap', performance: 'avaliacao de desempenho', absence: 'registro de absenteismo' };
+    if (!confirm(`Excluir este ${labels[type]}? Esta acao nao pode ser desfeita.`)) return;
+
+    collaborator[collection].splice(index, 1);
+    collaborator.history = [{ date: todayBr(), event: `${labels[type]} excluido da ficha` }, ...collaborator.history];
+    if (!await saveData()) return;
+    uiState.fichaRecordEditor = null;
+    showToast('Registro excluido com sucesso.');
+    renderApp();
+}
+
+function splitFichaList(value) {
+    return String(value || '').split(',').map(item => item.trim()).filter(Boolean);
+}
+
+async function saveFichaRecordEdit(event) {
+    event.preventDefault();
+    const collaborator = getSelectedColab();
+    const editor = uiState.fichaRecordEditor;
+    const collection = fichaRecordCollections[editor?.type];
+    if (!collaborator || !editor || !collection) return;
+
+    const original = collaborator[collection][editor.index];
+    let updated;
+    if (editor.type === 'warning') {
+        updated = { ...original, date: document.getElementById('edit-record-date').value, type: document.getElementById('edit-warning-type').value, reason: document.getElementById('edit-warning-reason').value.trim(), action: document.getElementById('edit-warning-action').value.trim(), evaluator: document.getElementById('edit-warning-evaluator').value.trim() };
+    } else if (editor.type === 'gap') {
+        updated = { ...original, date: document.getElementById('edit-record-date').value, gap: document.getElementById('edit-gap-text').value.trim(), impact: document.getElementById('edit-gap-impact').value, measure: document.getElementById('edit-gap-measure').value.trim() };
+    } else if (editor.type === 'absence') {
+        updated = { ...original, date: document.getElementById('edit-record-date').value, justificados: splitFichaList(document.getElementById('edit-absence-justified').value), naoJustificados: splitFichaList(document.getElementById('edit-absence-unjustified').value) };
+    } else {
+        const scores = Object.fromEntries(performanceBlocks.flatMap(block => block.criteria.map(item => [item.id, Number(document.getElementById(`edit-performance-${item.id}`).value)])));
+        const summary = calculatePerformanceSummary(scores);
+        updated = { ...original, cycle: document.getElementById('edit-performance-cycle').value.trim(), date: document.getElementById('edit-record-date').value, evaluator: document.getElementById('edit-performance-evaluator').value.trim(), notes: document.getElementById('edit-performance-notes').value.trim(), scores, blockScores: summary.blockScores, finalScore: summary.weightedTotal };
+    }
+
+    collaborator[collection][editor.index] = updated;
+    collaborator.history = [{ date: todayBr(), event: 'Registro da ficha editado' }, ...collaborator.history];
+    if (!await saveData()) return;
+    uiState.fichaRecordEditor = null;
+    showToast('Registro atualizado com sucesso.');
+    renderApp();
+}
+
+function renderFichaRecordActions(type, index) {
+    return `<div class="flex items-center gap-1 shrink-0">
+        <button type="button" onclick="openFichaRecordEditor('${type}', ${index})" class="p-1.5 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+        <button type="button" onclick="deleteFichaRecord('${type}', ${index})" class="p-1.5 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+    </div>`;
+}
+
+function renderFichaRecordEditor() {
+    const editor = uiState.fichaRecordEditor;
+    if (!editor) return '';
+    const record = editor.record;
+    const titles = { warning: 'Editar advertencia', gap: 'Editar gap', performance: 'Editar avaliacao de desempenho', absence: 'Editar absenteismo' };
+
+    return `
+        <div class="fixed inset-0 z-[180] bg-slate-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <form onsubmit="saveFichaRecordEdit(event)" class="bg-white w-full sm:max-w-3xl max-h-[92vh] rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+                <header class="px-5 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center gap-3"><div><p class="text-xs font-bold uppercase tracking-widest text-blue-600">Ficha funcional</p><h3 class="text-lg font-bold mt-1">${titles[editor.type]}</h3></div><button type="button" onclick="closeFichaRecordEditor()" class="p-2 text-slate-400 hover:text-slate-700 rounded-lg"><i data-lucide="x" class="w-5 h-5"></i></button></header>
+                <div class="p-4 sm:p-6 space-y-4 overflow-y-auto custom-scrollbar">
+                    <label class="block text-sm font-semibold">Data<input id="edit-record-date" type="date" required value="${toIsoInputDate(record.date)}" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5"></label>
+                    ${editor.type === 'warning' ? `
+                        <label class="block text-sm font-semibold">Tipo<select id="edit-warning-type" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5">${['Orientacao verbal', 'Advertencia escrita', 'Suspensao', 'Advertencia'].map(type => `<option ${record.type === type || (!record.type && type === 'Advertencia') ? 'selected' : ''}>${type}</option>`).join('')}</select></label>
+                        <label class="block text-sm font-semibold">Motivo<textarea id="edit-warning-reason" required rows="3" class="mt-1 w-full border border-slate-300 rounded-lg p-3">${escapeHtml(record.reason)}</textarea></label>
+                        <label class="block text-sm font-semibold">Medida aplicada<textarea id="edit-warning-action" rows="2" class="mt-1 w-full border border-slate-300 rounded-lg p-3">${escapeHtml(record.action || '')}</textarea></label>
+                        <label class="block text-sm font-semibold">Responsavel<input id="edit-warning-evaluator" value="${escapeHtml(record.evaluator || '')}" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5"></label>
+                    ` : ''}
+                    ${editor.type === 'gap' ? `
+                        <label class="block text-sm font-semibold">Gap / ocorrencia<input id="edit-gap-text" required value="${escapeHtml(record.gap)}" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5"></label>
+                        <label class="block text-sm font-semibold">Impacto<select id="edit-gap-impact" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5">${['Baixo', 'Medio', 'Alto'].map(value => `<option ${record.impact === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
+                        <label class="block text-sm font-semibold">Medida tomada<textarea id="edit-gap-measure" rows="3" class="mt-1 w-full border border-slate-300 rounded-lg p-3">${escapeHtml(record.measure || '')}</textarea></label>
+                    ` : ''}
+                    ${editor.type === 'absence' ? `
+                        <label class="block text-sm font-semibold">Motivos justificados <span class="font-normal text-slate-400">(separados por virgula)</span><textarea id="edit-absence-justified" rows="3" class="mt-1 w-full border border-slate-300 rounded-lg p-3">${escapeHtml((record.justificados || []).join(', '))}</textarea></label>
+                        <label class="block text-sm font-semibold">Motivos nao justificados <span class="font-normal text-slate-400">(separados por virgula)</span><textarea id="edit-absence-unjustified" rows="3" class="mt-1 w-full border border-slate-300 rounded-lg p-3">${escapeHtml((record.naoJustificados || []).join(', '))}</textarea></label>
+                        ${record.image ? '<p class="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-3">O anexo atual sera preservado.</p>' : ''}
+                    ` : ''}
+                    ${editor.type === 'performance' ? `
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3"><label class="text-sm font-semibold">Ciclo<input id="edit-performance-cycle" required value="${escapeHtml(record.cycle)}" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5"></label><label class="text-sm font-semibold">Avaliador<input id="edit-performance-evaluator" required value="${escapeHtml(record.evaluator || '')}" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5"></label></div>
+                        ${performanceBlocks.map(block => `<fieldset class="border border-slate-200 rounded-xl p-3"><legend class="px-1 text-sm font-bold">${block.title}</legend><div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">${block.criteria.map(item => `<label class="flex justify-between items-center gap-3 text-xs bg-slate-50 rounded-lg p-2.5"><span>${item.label}</span><select id="edit-performance-${item.id}" class="border border-slate-300 rounded p-1.5 font-bold">${[1,2,3,4,5].map(note => `<option value="${note}" ${Number(record.scores?.[item.id] || 3) === note ? 'selected' : ''}>${note}</option>`).join('')}</select></label>`).join('')}</div></fieldset>`).join('')}
+                        <label class="block text-sm font-semibold">Sintese<textarea id="edit-performance-notes" rows="3" class="mt-1 w-full border border-slate-300 rounded-lg p-3">${escapeHtml(record.notes || '')}</textarea></label>
+                    ` : ''}
+                </div>
+                <footer class="p-4 border-t border-slate-200 bg-slate-50 flex flex-col-reverse sm:flex-row justify-end gap-2"><button type="button" onclick="closeFichaRecordEditor()" class="px-5 py-2.5 text-slate-600 hover:bg-slate-200 rounded-lg">Cancelar</button><button type="submit" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold">Salvar alteracoes</button></footer>
+            </form>
+        </div>
+    `;
 }
 
 async function cadSaveColab(event) {
@@ -769,7 +1028,7 @@ function renderCadastro() {
                                     <td class="p-4 text-slate-600">${escapeHtml(c.role)}</td>
                                     <td class="p-4 text-slate-600">${escapeHtml(c.shift)}</td>
                                     <td class="p-4"><span class="px-2 py-1 rounded-full text-xs font-medium ${c.status === 'Ativo' ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-700'}">${escapeHtml(c.status)}</span></td>
-                                    <td class="p-4 text-center text-xs text-slate-600">${c.feedbacks.length} feedbacks / ${c.gaps.length} gaps / ${c.absenteismo.length} ausencias</td>
+                                    <td class="p-4 text-center text-xs text-slate-600">${c.performanceEvaluations.length + c.competencyEvaluations.length} avaliacoes / ${c.warnings.length} advertencias / ${c.feedbacks.length} feedbacks</td>
                                     <td class="p-4">
                                         <button onclick="cadViewColab('${c.id}')" class="text-blue-600 hover:text-blue-800 font-medium text-sm flex items-center">
                                             Ver ficha <i data-lucide="chevron-right" class="ml-1 w-4 h-4"></i>
@@ -889,6 +1148,9 @@ function renderCadastro() {
                     </div>
                     <div class="flex items-center gap-3">
                         <span class="px-3 py-1 rounded-full text-xs md:text-sm font-medium ${colab.status === 'Ativo' ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-700'}">${escapeHtml(colab.status)}</span>
+                        <button onclick="openCollaboratorPerformance('${colab.id}')" class="bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 px-3 py-1.5 rounded-lg flex items-center text-sm font-medium shadow-sm">
+                            <i data-lucide="radar" class="mr-2 w-4 h-4"></i> Desempenho
+                        </button>
                         <button onclick="cadEditColab()" class="bg-slate-50 text-slate-600 border border-slate-200 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 px-3 py-1.5 rounded-lg flex items-center text-sm font-medium shadow-sm">
                             <i data-lucide="edit" class="mr-2 w-4 h-4"></i> Editar ficha
                         </button>
@@ -910,18 +1172,20 @@ function renderCadastro() {
                         </div>
                         <div>
                             <h3 class="text-lg font-semibold flex items-center mb-3"><i data-lucide="shield-alert" class="mr-2 w-5 h-5 text-red-500"></i> Advertencias</h3>
-                            ${colab.warnings.length ? colab.warnings.map(w => `
+                            ${colab.warnings.length ? colab.warnings.map((w, index) => `
                                 <div class="bg-red-50/70 border border-red-200 rounded-lg p-4 text-sm mb-2">
-                                    <div class="font-bold text-red-800">${escapeHtml(w.date)}</div>
+                                    <div class="flex justify-between items-start gap-3"><span class="font-bold text-red-800">${escapeHtml(w.type || 'Advertencia')}</span><div class="flex items-center gap-2"><span class="text-xs text-slate-500">${formatDateBr(w.date)}</span>${renderFichaRecordActions('warning', index)}</div></div>
                                     <p class="mt-1 text-slate-700">${escapeHtml(w.reason)}</p>
+                                    ${w.action ? `<p class="mt-2 text-slate-600"><strong>Medida:</strong> ${escapeHtml(w.action)}</p>` : ''}
+                                    ${w.evaluator ? `<p class="mt-1 text-xs text-slate-500">Responsavel: ${escapeHtml(w.evaluator)}</p>` : ''}
                                 </div>
                             `).join('') : '<p class="text-sm text-slate-500 italic">Nenhuma advertencia registrada.</p>'}
                         </div>
                         <div>
                             <h3 class="text-lg font-semibold flex items-center mb-3"><i data-lucide="alert-triangle" class="mr-2 w-5 h-5 text-orange-500"></i> Gaps reportados</h3>
-                            ${colab.gaps.length ? colab.gaps.map(g => `
+                            ${colab.gaps.length ? colab.gaps.map((g, index) => `
                                 <div class="bg-orange-50/60 border border-orange-200 rounded-lg p-4 text-sm mb-2">
-                                    <div class="font-bold">${escapeHtml(g.date)} - Impacto: ${escapeHtml(g.impact)}</div>
+                                    <div class="flex justify-between items-start gap-3"><span class="font-bold">${formatDateBr(g.date)} - Impacto: ${escapeHtml(g.impact)}</span>${renderFichaRecordActions('gap', index)}</div>
                                     <p class="mt-2"><strong>Gap:</strong> ${escapeHtml(g.gap)}</p>
                                     <p class="mt-1"><strong>Medida:</strong> ${escapeHtml(g.measure)}</p>
                                 </div>
@@ -930,10 +1194,38 @@ function renderCadastro() {
                     </section>
                     <section class="space-y-5">
                         <div>
+                            <h3 class="text-lg font-semibold flex items-center mb-3"><i data-lucide="bar-chart-3" class="mr-2 w-5 h-5 text-blue-500"></i> Avaliacoes de desempenho</h3>
+                            ${colab.performanceEvaluations.length ? colab.performanceEvaluations.map((item, index) => `
+                                <article class="border border-blue-100 bg-blue-50/30 rounded-lg p-4 text-sm mb-3">
+                                    <div class="flex justify-between items-start gap-3"><div><strong class="text-blue-900">${escapeHtml(item.cycle)}</strong><p class="text-xs text-slate-500 mt-0.5">${formatDateBr(item.date)} · ${escapeHtml(item.evaluator || 'Avaliador nao informado')}</p></div><div class="flex items-center gap-2"><span class="bg-blue-600 text-white font-bold px-2.5 py-1 rounded-lg">${Number(item.finalScore || 0).toFixed(2)}</span>${renderFichaRecordActions('performance', index)}</div></div>
+                                    <div class="grid grid-cols-3 gap-2 mt-3 text-center">
+                                        ${performanceBlocks.map(block => `<div class="bg-white border border-blue-100 rounded p-2"><span class="block text-[10px] text-slate-500">${escapeHtml(block.title)}</span><strong>${Number(item.blockScores?.[block.id] || 0).toFixed(1)}</strong></div>`).join('')}
+                                    </div>
+                                    ${item.notes ? `<p class="mt-3 text-slate-600 whitespace-pre-wrap">${escapeHtml(item.notes)}</p>` : ''}
+                                </article>
+                            `).join('') : '<p class="text-sm text-slate-500 italic">Nenhuma avaliacao de desempenho registrada.</p>'}
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold flex items-center mb-3"><i data-lucide="clipboard-check" class="mr-2 w-5 h-5 text-emerald-500"></i> Historico de competencias</h3>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                                ${getCompetenciesBySector(colab.sector).map(competency => {
+                                    const level = Number(colab.scores[competency.id]) || 0;
+                                    return `<div class="border border-slate-200 rounded-lg p-3 flex justify-between gap-2"><span class="text-xs font-semibold text-slate-700">${escapeHtml(competency.name)}</span><span class="text-xs font-bold ${level >= 3 ? 'text-emerald-700' : level > 0 ? 'text-amber-700' : 'text-slate-400'}">${levelLabel(level)}</span></div>`;
+                                }).join('')}
+                            </div>
+                            ${colab.competencyEvaluations.length ? colab.competencyEvaluations.map(item => `
+                                <article class="border border-emerald-100 bg-emerald-50/30 rounded-lg p-4 text-sm mb-2">
+                                    <div class="flex justify-between gap-3"><strong class="text-emerald-900">${escapeHtml(item.competencyName)}</strong><span class="font-bold text-emerald-700">${levelLabel(item.level)}</span></div>
+                                    <p class="text-xs text-slate-500 mt-1">${formatDateBr(item.date)} · ${escapeHtml(item.evaluator || 'Avaliador nao informado')}</p>
+                                    ${item.notes ? `<p class="mt-2 text-slate-600">${escapeHtml(item.notes)}</p>` : ''}
+                                </article>
+                            `).join('') : '<p class="text-sm text-slate-500 italic">Nenhuma avaliacao de competencia registrada.</p>'}
+                        </div>
+                        <div>
                             <h3 class="text-lg font-semibold flex items-center mb-3"><i data-lucide="calendar-x" class="mr-2 w-5 h-5 text-purple-500"></i> Absenteismo</h3>
-                            ${colab.absenteismo.length ? colab.absenteismo.map(abs => `
+                            ${colab.absenteismo.length ? colab.absenteismo.map((abs, index) => `
                                 <div class="border border-slate-200 rounded-lg p-4 text-sm bg-white shadow-sm mb-2">
-                                    <div class="font-bold border-b pb-2">Data: ${escapeHtml(abs.date)}</div>
+                                    <div class="font-bold border-b pb-2 flex justify-between items-center gap-3"><span>Data: ${formatDateBr(abs.date)}</span>${renderFichaRecordActions('absence', index)}</div>
                                     ${abs.justificados.length ? `<div class="text-green-700 mt-2"><strong>Justificado:</strong> ${abs.justificados.map(escapeHtml).join(', ')}</div>` : ''}
                                     ${abs.naoJustificados.length ? `<div class="text-red-700 mt-2"><strong>Nao justificado:</strong> ${abs.naoJustificados.map(escapeHtml).join(', ')}</div>` : ''}
                                     ${abs.image ? `<button onclick="openImageModal('${abs.image}')" class="mt-3 text-xs bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-1.5 rounded-lg flex items-center font-medium"><i data-lucide="image" class="w-4 h-4 mr-1.5"></i> Visualizar anexo</button>` : ''}
@@ -973,6 +1265,7 @@ function renderCadastro() {
                     </section>
                 </div>
             </div>
+            ${renderFichaRecordEditor()}
         </div>
     `;
 }
@@ -1040,12 +1333,13 @@ function renderCompetencias() {
                 </select>
             </div>
             <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden overflow-x-auto">
-                <table class="w-full text-left border-collapse min-w-[760px]">
+                <table class="w-full text-left border-collapse min-w-[920px]">
                     <thead>
                         <tr class="bg-slate-50 border-b border-slate-200">
                             <th class="p-4 font-semibold text-slate-600 text-sm">Nome</th>
                             <th class="p-4 font-semibold text-slate-600 text-sm">Setor</th>
                             <th class="p-4 font-semibold text-slate-600 text-sm">Categoria</th>
+                            <th class="p-4 font-semibold text-slate-600 text-sm">Configuracao</th>
                             <th class="p-4 font-semibold text-slate-600 text-sm">Obrigatoria</th>
                             <th class="p-4 font-semibold text-slate-600 text-sm text-center">Acoes</th>
                         </tr>
@@ -1068,6 +1362,7 @@ function renderCompetencias() {
                                                 <option value="Comportamental" ${f.category === 'Comportamental' ? 'selected' : ''}>Comportamental</option>
                                             </select>
                                         </td>
+                                        <td class="p-2 text-xs text-slate-500">${escapeHtml(f.advanced?.criticality || 'Media')} · ${escapeHtml(f.advanced?.targetProficiency || 'Intermediario')}</td>
                                         <td class="p-2">
                                             <select onchange="compUpdateMandatory(this.value)" class="w-full border border-slate-300 rounded p-2 text-sm outline-none">
                                                 <option value="true" ${f.mandatory ? 'selected' : ''}>Sim</option>
@@ -1086,6 +1381,7 @@ function renderCompetencias() {
                                     <td class="p-4 font-medium">${escapeHtml(c.name)}</td>
                                     <td class="p-4">${sectorLabel(c.sector)}</td>
                                     <td class="p-4"><span class="px-2 py-1 rounded text-xs font-medium ${c.category === 'Operacional' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}">${escapeHtml(c.category)}</span></td>
+                                    <td class="p-4"><span class="block text-xs font-semibold text-slate-700">${escapeHtml(c.advanced.criticality)} · ${escapeHtml(c.advanced.targetProficiency)}</span><span class="block text-[10px] text-slate-400 mt-1">${c.advanced.renewal.required ? `Validade: ${c.advanced.renewal.validityMonths} meses` : 'Sem validade periodica'}</span></td>
                                     <td class="p-4">${c.mandatory ? 'Sim' : 'Nao'}</td>
                                     <td class="p-4 text-center">
                                         ${uiState.showDeleteCompConfirm === c.id ? `
@@ -1380,6 +1676,522 @@ function renderAbsenteismo() {
     `;
 }
 
+// -----------------------------------------------------------------------------
+// MODULO DE DESEMPENHO: avaliacao, diario de bordo, radar e PDI
+// Em um projeto separado, este bloco pode ser movido para desempenho.js.
+// -----------------------------------------------------------------------------
+let performanceRadarChart = null;
+
+function todayIsoLocal() {
+    const now = new Date();
+    const offset = now.getTimezoneOffset() * 60000;
+    return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function performanceSetSector(value) {
+    uiState.performanceSector = value;
+    uiState.performanceColabId = '';
+    renderApp();
+}
+
+function performanceSelectColab(value) {
+    uiState.performanceColabId = value;
+    uiState.performanceCompId = '';
+    uiState.performanceCompCheckedItems.clear();
+    uiState.pdiGoalCount = 1;
+    renderApp();
+}
+
+function getPerformanceCollaborator() {
+    return db.collaborators.find(c => c.id === uiState.performanceColabId) || null;
+}
+
+function performanceSelectCompetency(value) {
+    uiState.performanceCompId = value;
+    uiState.performanceCompCheckedItems.clear();
+    renderApp();
+}
+
+function performanceToggleCompetencyCriterion(id) {
+    if (uiState.performanceCompCheckedItems.has(id)) uiState.performanceCompCheckedItems.delete(id);
+    else uiState.performanceCompCheckedItems.add(id);
+    const level = scoreToLevel(uiState.performanceCompCheckedItems.size);
+    const badge = document.getElementById('performance-competency-level');
+    if (badge) badge.textContent = levelLabel(level);
+}
+
+async function savePerformanceCompetencyEvaluation(event) {
+    event.preventDefault();
+    const collaborator = getPerformanceCollaborator();
+    const competency = db.competencies.find(item => item.id === uiState.performanceCompId);
+    if (!collaborator || !competency) return showToast('Selecione uma competencia.', 'error');
+
+    const level = scoreToLevel(uiState.performanceCompCheckedItems.size);
+    const evaluation = {
+        id: `comp-eval-${Date.now()}`,
+        competencyId: competency.id,
+        competencyName: competency.name,
+        date: document.getElementById('performance-comp-date').value,
+        evaluator: document.getElementById('performance-comp-evaluator').value.trim(),
+        notes: document.getElementById('performance-comp-notes').value.trim(),
+        checkedCriteria: [...uiState.performanceCompCheckedItems],
+        level
+    };
+
+    collaborator.scores = { ...collaborator.scores, [competency.id]: level };
+    collaborator.competencyEvaluations = [evaluation, ...collaborator.competencyEvaluations];
+    collaborator.history = [{ date: todayBr(), event: `Competencia: ${competency.name} - ${levelLabel(level)}` }, ...collaborator.history];
+    if (!await saveData()) return;
+    uiState.performanceCompCheckedItems.clear();
+    showToast('Competencia avaliada e vinculada a ficha.');
+    renderApp();
+}
+
+async function savePerformanceWarning(event) {
+    event.preventDefault();
+    const collaborator = getPerformanceCollaborator();
+    if (!collaborator) return showToast('Selecione um colaborador.', 'error');
+
+    const warning = {
+        id: `warning-${Date.now()}`,
+        date: document.getElementById('performance-warning-date').value,
+        type: document.getElementById('performance-warning-type').value,
+        reason: document.getElementById('performance-warning-reason').value.trim(),
+        action: document.getElementById('performance-warning-action').value.trim(),
+        evaluator: document.getElementById('performance-warning-evaluator').value.trim()
+    };
+    collaborator.warnings = [warning, ...collaborator.warnings];
+    collaborator.history = [{ date: todayBr(), event: `${warning.type}: ${warning.reason}` }, ...collaborator.history];
+    if (!await saveData()) return;
+    showToast('Advertencia registrada e vinculada a ficha.');
+    renderApp();
+}
+
+function openPerformanceCollaboratorRecord() {
+    const collaborator = getPerformanceCollaborator();
+    if (!collaborator) return;
+    uiState.selectedColabId = collaborator.id;
+    uiState.activeTab = 'cadastro';
+    uiState.isEditingColab = false;
+    renderApp();
+}
+
+function getPerformanceDraftScores(collaborator) {
+    const latest = collaborator?.performanceEvaluations?.[0];
+    return Object.fromEntries(performanceBlocks.flatMap(block =>
+        block.criteria.map(criterion => [criterion.id, Number(latest?.scores?.[criterion.id]) || 3])
+    ));
+}
+
+function calculatePerformanceSummary(scores) {
+    const blockScores = {};
+    let weightedTotal = 0;
+    performanceBlocks.forEach(block => {
+        const values = block.criteria.map(item => Number(scores[item.id]) || 0);
+        const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+        blockScores[block.id] = average;
+        weightedTotal += average * (block.weight / 100);
+    });
+    return { blockScores, weightedTotal };
+}
+
+function collectPerformanceScores() {
+    return Object.fromEntries(performanceBlocks.flatMap(block => block.criteria.map(item => {
+        const input = document.getElementById(`performance-${item.id}`);
+        return [item.id, Number(input?.value) || 1];
+    })));
+}
+
+function performanceScoreChanged() {
+    const scores = collectPerformanceScores();
+    const summary = calculatePerformanceSummary(scores);
+    performanceBlocks.forEach(block => {
+        const element = document.getElementById(`block-score-${block.id}`);
+        if (element) element.textContent = summary.blockScores[block.id].toFixed(1);
+    });
+    const total = document.getElementById('performance-total');
+    if (total) total.textContent = summary.weightedTotal.toFixed(2);
+    updatePerformanceRadar(scores);
+}
+
+function initializePerformanceRadar(scores) {
+    const canvas = document.getElementById('performance-radar');
+    if (!canvas || typeof Chart === 'undefined') return;
+    if (performanceRadarChart) performanceRadarChart.destroy();
+
+    const criteria = performanceBlocks.flatMap(block => block.criteria);
+    performanceRadarChart = new Chart(canvas, {
+        type: 'radar',
+        data: {
+            labels: criteria.map(item => item.label),
+            datasets: [{
+                label: 'Nota atual',
+                data: criteria.map(item => Number(scores[item.id]) || 0),
+                borderColor: '#2563eb',
+                backgroundColor: 'rgba(37, 99, 235, 0.16)',
+                pointBackgroundColor: '#2563eb',
+                pointBorderColor: '#ffffff',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                r: {
+                    min: 0,
+                    max: 5,
+                    ticks: { stepSize: 1, backdropColor: 'transparent' },
+                    pointLabels: { font: { size: 11, weight: '600' }, color: '#475569' },
+                    grid: { color: '#cbd5e1' },
+                    angleLines: { color: '#e2e8f0' }
+                }
+            },
+            plugins: { legend: { position: 'bottom' } }
+        }
+    });
+}
+
+function updatePerformanceRadar(scores) {
+    if (!performanceRadarChart) return initializePerformanceRadar(scores);
+    const criteria = performanceBlocks.flatMap(block => block.criteria);
+    performanceRadarChart.data.datasets[0].data = criteria.map(item => Number(scores[item.id]) || 0);
+    performanceRadarChart.update();
+}
+
+async function savePerformanceEvaluation(event) {
+    event.preventDefault();
+    const collaborator = getPerformanceCollaborator();
+    if (!collaborator) return showToast('Selecione um colaborador.', 'error');
+
+    const scores = collectPerformanceScores();
+    const summary = calculatePerformanceSummary(scores);
+    const evaluation = {
+        id: `eval-${Date.now()}`,
+        cycle: document.getElementById('performance-cycle').value.trim(),
+        date: document.getElementById('performance-date').value,
+        evaluator: document.getElementById('performance-evaluator').value.trim(),
+        notes: document.getElementById('performance-notes').value.trim(),
+        scores,
+        blockScores: summary.blockScores,
+        finalScore: summary.weightedTotal
+    };
+
+    collaborator.performanceEvaluations = [evaluation, ...collaborator.performanceEvaluations];
+    collaborator.history = [{ date: todayBr(), event: `Avaliacao de desempenho: ${evaluation.cycle} - nota ${evaluation.finalScore.toFixed(2)}` }, ...collaborator.history];
+    if (!await saveData()) return;
+    showToast('Avaliacao de desempenho salva.');
+    renderApp();
+}
+
+async function saveLogbookEntry(event) {
+    event.preventDefault();
+    const collaborator = getPerformanceCollaborator();
+    if (!collaborator) return showToast('Selecione um colaborador.', 'error');
+
+    collaborator.logbook = [{
+        id: `log-${Date.now()}`,
+        date: document.getElementById('logbook-date').value,
+        type: document.getElementById('logbook-type').value,
+        category: document.getElementById('logbook-category').value,
+        description: document.getElementById('logbook-description').value.trim()
+    }, ...collaborator.logbook];
+    if (!await saveData()) return;
+    showToast('Ocorrencia adicionada ao diario de bordo.');
+    renderApp();
+}
+
+function addPdiGoalRow() {
+    if (uiState.pdiGoalCount >= 3) return;
+    uiState.pdiGoalCount += 1;
+    document.getElementById(`pdi-row-${uiState.pdiGoalCount}`)?.classList.remove('hidden');
+    if (uiState.pdiGoalCount === 3) document.getElementById('pdi-add-button')?.classList.add('hidden');
+}
+
+async function savePdiGoals(event) {
+    event.preventDefault();
+    const collaborator = getPerformanceCollaborator();
+    if (!collaborator) return showToast('Selecione um colaborador.', 'error');
+
+    const newGoals = [];
+    for (let index = 1; index <= uiState.pdiGoalCount; index += 1) {
+        const goal = document.getElementById(`pdi-goal-${index}`).value.trim();
+        const action = document.getElementById(`pdi-action-${index}`).value.trim();
+        const indicator = document.getElementById(`pdi-indicator-${index}`).value.trim();
+        const deadline = document.getElementById(`pdi-deadline-${index}`).value;
+        if (!goal && !action && !indicator && !deadline) continue;
+        if (!goal || !action || !indicator || !deadline) {
+            return showToast(`Complete todos os campos da meta ${index}.`, 'error');
+        }
+        newGoals.push({ id: `pdi-${Date.now()}-${index}`, goal, action, indicator, deadline, createdAt: todayIsoLocal(), status: 'Em andamento' });
+    }
+    if (!newGoals.length) return showToast('Registre ao menos uma meta de PDI.', 'error');
+
+    collaborator.pdiGoals = [...newGoals, ...collaborator.pdiGoals];
+    if (!await saveData()) return;
+    uiState.pdiGoalCount = 1;
+    showToast(`${newGoals.length} meta(s) adicionada(s) ao PDI.`);
+    renderApp();
+}
+
+async function togglePdiGoalStatus(goalId) {
+    const collaborator = getPerformanceCollaborator();
+    if (!collaborator) return;
+    collaborator.pdiGoals = collaborator.pdiGoals.map(goal => goal.id === goalId
+        ? { ...goal, status: goal.status === 'Concluida' ? 'Em andamento' : 'Concluida' }
+        : goal);
+    if (!await saveData()) return;
+    showToast('Status da meta atualizado.');
+    renderApp();
+}
+
+function renderPerformance() {
+    const sector = uiState.performanceSector || SECTOR_EXPEDICAO;
+    const collaborators = getActiveCollaboratorsBySector(sector);
+    const collaborator = getPerformanceCollaborator();
+    const scores = getPerformanceDraftScores(collaborator);
+    const summary = calculatePerformanceSummary(scores);
+    const latestEvaluation = collaborator?.performanceEvaluations?.[0];
+    const sectorCompetencies = getCompetenciesBySector(sector);
+    const selectedCompetency = sectorCompetencies.find(item => item.id === uiState.performanceCompId) || null;
+    const competencyLevel = scoreToLevel(uiState.performanceCompCheckedItems.size);
+    const competencyEvaluations = collaborator?.competencyEvaluations || [];
+    const logbook = collaborator?.logbook || [];
+    const pdiGoals = collaborator?.pdiGoals || [];
+    const warnings = collaborator?.warnings || [];
+
+    return `
+        <div class="space-y-6 animate-fade-in">
+            <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+                <div>
+                    <p class="text-xs font-bold uppercase tracking-widest text-blue-600">Ciclo de pessoas</p>
+                    <h2 class="text-2xl font-bold text-slate-900 mt-1">Desempenho na Expedicao</h2>
+                    <p class="text-sm text-slate-500 mt-1">Evidencias do dia a dia, avaliacao ponderada e compromissos do proximo ciclo.</p>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full lg:w-auto lg:min-w-[560px]">
+                    <label class="text-sm font-semibold text-slate-700">Setor
+                        <select onchange="performanceSetSector(this.value)" class="mt-1 w-full border border-slate-300 bg-white rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none">
+                            ${sectorOptions(sector)}
+                        </select>
+                    </label>
+                    <label class="text-sm font-semibold text-slate-700">Colaborador
+                        <select onchange="performanceSelectColab(this.value)" class="mt-1 w-full border border-slate-300 bg-white rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none">
+                            <option value="">-- Selecione --</option>
+                            ${collaborators.map(c => `<option value="${c.id}" ${collaborator?.id === c.id ? 'selected' : ''}>${escapeHtml(c.name)} - ${escapeHtml(c.role)}</option>`).join('')}
+                        </select>
+                    </label>
+                    ${collaborator ? `<button type="button" onclick="openPerformanceCollaboratorRecord()" class="sm:col-span-2 justify-self-end text-sm font-semibold text-blue-600 hover:text-blue-800 flex items-center"><i data-lucide="external-link" class="w-4 h-4 mr-1.5"></i> Abrir ficha completa</button>` : ''}
+                </div>
+            </div>
+
+            ${!collaborator ? `
+                <div class="bg-white border border-dashed border-slate-300 rounded-2xl p-12 text-center">
+                    <i data-lucide="user-search" class="w-10 h-10 mx-auto text-slate-400 mb-3"></i>
+                    <h3 class="font-bold text-slate-700">Selecione um colaborador</h3>
+                    <p class="text-sm text-slate-500 mt-1">Os modulos serao exibidos com o historico individual.</p>
+                </div>
+            ` : `
+                <section class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                    <div class="p-5 border-b border-slate-200 bg-gradient-to-r from-slate-900 to-slate-800 text-white">
+                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                            <div>
+                                <p class="text-xs font-bold uppercase tracking-widest text-blue-300">1. Avaliacao formal</p>
+                                <h3 class="text-xl font-bold mt-1">Matriz de desempenho</h3>
+                            </div>
+                            <div class="bg-white/10 border border-white/15 rounded-xl px-5 py-3 text-center">
+                                <span class="block text-xs text-slate-300">Nota ponderada</span>
+                                <strong id="performance-total" class="text-2xl">${summary.weightedTotal.toFixed(2)}</strong><span class="text-sm text-slate-300"> / 5</span>
+                            </div>
+                        </div>
+                    </div>
+                    <form onsubmit="savePerformanceEvaluation(event)" class="p-5 space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <label class="text-sm font-semibold">Ciclo
+                                <input id="performance-cycle" required value="${escapeHtml(latestEvaluation?.cycle || '')}" placeholder="Ex: 2º semestre/2026" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500">
+                            </label>
+                            <label class="text-sm font-semibold">Data da avaliacao
+                                <input id="performance-date" type="date" required value="${todayIsoLocal()}" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500">
+                            </label>
+                            <label class="text-sm font-semibold">Lider avaliador
+                                <input id="performance-evaluator" required placeholder="Nome do lider" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500">
+                            </label>
+                        </div>
+
+                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                            <p class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Escala recomendada</p>
+                            <div class="grid grid-cols-1 sm:grid-cols-5 gap-2">
+                                ${Object.entries(performanceScale).map(([note, label]) => `<div class="bg-white border border-slate-200 rounded-lg p-3"><strong class="text-blue-600">${note}</strong><p class="text-[11px] leading-4 text-slate-600 mt-1">${label}</p></div>`).join('')}
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
+                            <div class="xl:col-span-3 space-y-4">
+                                ${performanceBlocks.map(block => `
+                                    <fieldset class="border border-slate-200 rounded-xl overflow-hidden">
+                                        <legend class="sr-only">${block.title}</legend>
+                                        <div class="bg-slate-50 border-b border-slate-200 px-4 py-3 flex justify-between items-center gap-3">
+                                            <div><h4 class="font-bold text-slate-800">${block.title} <span class="text-xs text-blue-600">(${block.weight}%)</span></h4><p class="text-xs text-slate-500">${block.description}</p></div>
+                                            <div class="shrink-0 text-center"><span class="block text-[10px] uppercase text-slate-400">Media</span><strong id="block-score-${block.id}" class="text-lg text-slate-800">${summary.blockScores[block.id].toFixed(1)}</strong></div>
+                                        </div>
+                                        <div class="divide-y divide-slate-100">
+                                            ${block.criteria.map(item => `
+                                                <label class="grid grid-cols-1 sm:grid-cols-[1fr_90px] gap-3 p-4 items-center hover:bg-slate-50">
+                                                    <span><strong class="block text-sm text-slate-800">${item.label}</strong><span class="text-xs text-slate-500">${item.question}</span></span>
+                                                    <select id="performance-${item.id}" onchange="performanceScoreChanged()" class="w-full border border-slate-300 rounded-lg p-2 text-center font-bold text-blue-700 outline-none focus:ring-2 focus:ring-blue-500">
+                                                        ${[1, 2, 3, 4, 5].map(note => `<option value="${note}" ${scores[item.id] === note ? 'selected' : ''}>${note}</option>`).join('')}
+                                                    </select>
+                                                </label>
+                                            `).join('')}
+                                        </div>
+                                    </fieldset>
+                                `).join('')}
+                            </div>
+                            <aside class="xl:col-span-2 xl:sticky xl:top-4 bg-slate-50 border border-slate-200 rounded-xl p-4">
+                                <h4 class="font-bold text-slate-800">Radar de competencias</h4>
+                                <p class="text-xs text-slate-500 mt-1">Atualiza automaticamente conforme as notas.</p>
+                                <div class="h-[360px] mt-3"><canvas id="performance-radar"></canvas></div>
+                            </aside>
+                        </div>
+                        <label class="block text-sm font-semibold">Sintese e evidencias da avaliacao
+                            <textarea id="performance-notes" rows="3" class="mt-1 w-full border border-slate-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Registre fatos, numeros e exemplos observaveis."></textarea>
+                        </label>
+                        <div class="flex justify-end"><button class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-lg shadow-sm flex items-center"><i data-lucide="save" class="w-4 h-4 mr-2"></i> Salvar avaliacao</button></div>
+                    </form>
+                </section>
+
+                <section class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                        <div class="p-5 border-b border-slate-200 bg-blue-50/60">
+                            <p class="text-xs font-bold uppercase tracking-widest text-blue-600">2. Avaliacao tecnica</p>
+                            <h3 class="text-lg font-bold mt-1">Competencias da funcao</h3>
+                            <p class="text-sm text-slate-500 mt-1">Atualiza a matriz e grava cada avaliacao na ficha do colaborador.</p>
+                        </div>
+                        <form onsubmit="savePerformanceCompetencyEvaluation(event)" class="p-5 space-y-4">
+                            <label class="block text-sm font-semibold">Competencia
+                                <select onchange="performanceSelectCompetency(this.value)" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="">-- Selecione --</option>
+                                    ${sectorCompetencies.map(item => `<option value="${item.id}" ${selectedCompetency?.id === item.id ? 'selected' : ''}>${escapeHtml(item.name)}${item.mandatory ? ' *' : ''}</option>`).join('')}
+                                </select>
+                            </label>
+                            ${selectedCompetency ? `
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <label class="text-sm font-semibold">Data<input id="performance-comp-date" type="date" required value="${todayIsoLocal()}" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5"></label>
+                                    <label class="text-sm font-semibold">Lider avaliador<input id="performance-comp-evaluator" required class="mt-1 w-full border border-slate-300 rounded-lg p-2.5" placeholder="Nome do lider"></label>
+                                </div>
+                                <div class="border border-slate-200 rounded-xl overflow-hidden">
+                                    <div class="bg-slate-50 border-b border-slate-200 p-3 flex justify-between items-center"><strong class="text-sm">Checklist de dominio</strong><span id="performance-competency-level" class="text-xs font-bold text-blue-700">${levelLabel(competencyLevel)}</span></div>
+                                    <div class="p-3 space-y-2 max-h-[310px] overflow-y-auto custom-scrollbar">
+                                        ${evaluationCriteria.map(item => `<label class="flex items-start p-2.5 border border-slate-100 rounded-lg hover:bg-slate-50 cursor-pointer"><input type="checkbox" onchange="performanceToggleCompetencyCriterion(${item.id})" ${uiState.performanceCompCheckedItems.has(item.id) ? 'checked' : ''} class="mt-0.5 w-4 h-4 text-blue-600 rounded"><span class="ml-2.5 text-xs text-slate-700">${escapeHtml(item.text)}</span></label>`).join('')}
+                                    </div>
+                                </div>
+                                <label class="block text-sm font-semibold">Evidencias / observacoes<textarea id="performance-comp-notes" rows="3" class="mt-1 w-full border border-slate-300 rounded-lg p-3" placeholder="Exemplos observados durante a execucao."></textarea></label>
+                                <button class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg">Gravar avaliacao de competencia</button>
+                            ` : '<p class="text-sm text-slate-500 text-center py-8">Selecione uma competencia para iniciar.</p>'}
+                        </form>
+                        <div class="border-t border-slate-200 p-5">
+                            <h4 class="font-bold text-sm mb-3">Ultimas avaliacoes</h4>
+                            <div class="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
+                                ${competencyEvaluations.length ? competencyEvaluations.slice(0, 6).map(item => `<div class="border border-slate-200 rounded-lg p-3 flex justify-between gap-3"><div><strong class="text-sm">${escapeHtml(item.competencyName)}</strong><p class="text-xs text-slate-500 mt-0.5">${formatDateBr(item.date)} · ${escapeHtml(item.evaluator || 'Avaliador nao informado')}</p></div><span class="text-xs font-bold text-blue-700 shrink-0">${levelLabel(item.level)}</span></div>`).join('') : '<p class="text-xs text-slate-500">Nenhuma avaliacao tecnica registrada.</p>'}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white border border-red-200 rounded-2xl shadow-sm overflow-hidden">
+                        <div class="p-5 border-b border-red-100 bg-red-50/70">
+                            <p class="text-xs font-bold uppercase tracking-widest text-red-600">3. Registros disciplinares</p>
+                            <h3 class="text-lg font-bold mt-1">Advertencias e orientacoes</h3>
+                            <p class="text-sm text-slate-500 mt-1">O registro salvo aparece imediatamente na ficha funcional.</p>
+                        </div>
+                        <form onsubmit="savePerformanceWarning(event)" class="p-5 space-y-4">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <label class="text-sm font-semibold">Data<input id="performance-warning-date" type="date" required value="${todayIsoLocal()}" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5"></label>
+                                <label class="text-sm font-semibold">Tipo<select id="performance-warning-type" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5"><option>Orientacao verbal</option><option>Advertencia escrita</option><option>Suspensao</option></select></label>
+                            </div>
+                            <label class="block text-sm font-semibold">Motivo / fato observado<textarea id="performance-warning-reason" required rows="3" class="mt-1 w-full border border-slate-300 rounded-lg p-3" placeholder="Descreva o fato de forma objetiva."></textarea></label>
+                            <label class="block text-sm font-semibold">Orientacao ou medida aplicada<textarea id="performance-warning-action" required rows="2" class="mt-1 w-full border border-slate-300 rounded-lg p-3" placeholder="Informe o combinado e a expectativa futura."></textarea></label>
+                            <label class="block text-sm font-semibold">Lider responsavel<input id="performance-warning-evaluator" required class="mt-1 w-full border border-slate-300 rounded-lg p-2.5" placeholder="Nome do lider"></label>
+                            <button class="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2.5 rounded-lg">Registrar na ficha</button>
+                        </form>
+                        <div class="border-t border-red-100 p-5">
+                            <div class="flex justify-between items-center mb-3"><h4 class="font-bold text-sm">Historico disciplinar</h4><span class="text-xs text-slate-500">${warnings.length} registro(s)</span></div>
+                            <div class="space-y-2 max-h-56 overflow-y-auto custom-scrollbar">
+                                ${warnings.length ? warnings.map(item => `<article class="border border-red-100 bg-red-50/30 rounded-lg p-3"><div class="flex justify-between gap-3"><strong class="text-sm text-red-800">${escapeHtml(item.type || 'Advertencia')}</strong><time class="text-xs text-slate-500">${formatDateBr(item.date)}</time></div><p class="text-xs text-slate-700 mt-2">${escapeHtml(item.reason)}</p>${item.action ? `<p class="text-xs text-slate-500 mt-1"><b>Medida:</b> ${escapeHtml(item.action)}</p>` : ''}</article>`).join('') : '<p class="text-xs text-slate-500">Nenhuma advertencia registrada.</p>'}
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="grid grid-cols-1 xl:grid-cols-5 gap-6">
+                    <div class="xl:col-span-2 bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
+                        <p class="text-xs font-bold uppercase tracking-widest text-amber-600">4. Feedback continuo</p>
+                        <h3 class="text-lg font-bold mt-1">Diario de bordo</h3>
+                        <p class="text-sm text-slate-500 mt-1">Registre fatos objetivos em menos de um minuto.</p>
+                        <form onsubmit="saveLogbookEntry(event)" class="space-y-4 mt-5">
+                            <div class="grid grid-cols-2 gap-3">
+                                <label class="text-sm font-semibold">Data<input id="logbook-date" type="date" required value="${todayIsoLocal()}" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5"></label>
+                                <label class="text-sm font-semibold">Tipo<select id="logbook-type" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5"><option>Positiva</option><option>Atencao</option></select></label>
+                            </div>
+                            <label class="block text-sm font-semibold">Categoria
+                                <select id="logbook-category" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5">${performanceBlocks.flatMap(block => block.criteria).map(item => `<option>${item.label}</option>`).join('')}</select>
+                            </label>
+                            <label class="block text-sm font-semibold">Fato observado
+                                <textarea id="logbook-description" required rows="4" maxlength="500" class="mt-1 w-full border border-slate-300 rounded-lg p-3" placeholder="Ex: antecipou divergencia de volumes e evitou atraso na doca 3."></textarea>
+                            </label>
+                            <button class="w-full bg-amber-500 hover:bg-amber-600 text-white font-semibold py-2.5 rounded-lg">Registrar ocorrencia</button>
+                        </form>
+                    </div>
+                    <div class="xl:col-span-3 bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
+                        <div class="flex justify-between items-center"><h3 class="font-bold">Ocorrencias recentes</h3><span class="text-xs text-slate-500">${logbook.length} registro(s)</span></div>
+                        <div class="mt-4 space-y-3 max-h-[430px] overflow-y-auto custom-scrollbar pr-1">
+                            ${logbook.length ? logbook.map(entry => `
+                                <article class="border border-slate-200 rounded-xl p-4 flex gap-3">
+                                    <div class="mt-1 w-2 h-2 rounded-full shrink-0 ${entry.type === 'Positiva' ? 'bg-emerald-500' : 'bg-amber-500'}"></div>
+                                    <div class="min-w-0"><div class="flex flex-wrap gap-2 items-center"><strong class="text-sm">${escapeHtml(entry.category)}</strong><span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${entry.type === 'Positiva' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}">${escapeHtml(entry.type)}</span><time class="text-xs text-slate-400">${formatDateBr(entry.date)}</time></div><p class="text-sm text-slate-600 mt-2 whitespace-pre-wrap">${escapeHtml(entry.description)}</p></div>
+                                </article>
+                            `).join('') : '<p class="text-sm text-slate-500 text-center py-12">Nenhuma ocorrencia registrada neste ciclo.</p>'}
+                        </div>
+                    </div>
+                </section>
+
+                <section class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
+                    <p class="text-xs font-bold uppercase tracking-widest text-emerald-600">5. Proximo ciclo</p>
+                    <h3 class="text-lg font-bold mt-1">PDI - Plano de Desenvolvimento Individual</h3>
+                    <p class="text-sm text-slate-500 mt-1">Defina de 1 a 3 metas especificas, com acao, evidencia de sucesso e prazo.</p>
+                    <form onsubmit="savePdiGoals(event)" class="mt-5 space-y-4">
+                        ${[1, 2, 3].map(index => `
+                            <div id="pdi-row-${index}" class="${index > uiState.pdiGoalCount ? 'hidden' : ''} border border-slate-200 rounded-xl p-4">
+                                <div class="font-bold text-sm text-emerald-700 mb-3">Meta ${index}</div>
+                                <div class="grid grid-cols-1 lg:grid-cols-4 gap-3">
+                                    <label class="text-sm font-semibold">O que desenvolver?<input id="pdi-goal-${index}" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5" placeholder="Ex: elevar acuracidade"></label>
+                                    <label class="text-sm font-semibold">Acao pratica<input id="pdi-action-${index}" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5" placeholder="Ex: checklist pre-embarque"></label>
+                                    <label class="text-sm font-semibold">Indicador de sucesso<input id="pdi-indicator-${index}" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5" placeholder="Ex: ≥ 99,5% por 30 dias"></label>
+                                    <label class="text-sm font-semibold">Prazo<input id="pdi-deadline-${index}" type="date" min="${todayIsoLocal()}" class="mt-1 w-full border border-slate-300 rounded-lg p-2.5"></label>
+                                </div>
+                            </div>
+                        `).join('')}
+                        <div class="flex flex-col sm:flex-row justify-between gap-3">
+                            <button id="pdi-add-button" type="button" onclick="addPdiGoalRow()" class="${uiState.pdiGoalCount >= 3 ? 'hidden' : ''} border border-emerald-300 text-emerald-700 hover:bg-emerald-50 font-semibold px-5 py-2.5 rounded-lg">+ Adicionar outra meta</button>
+                            <button class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-2.5 rounded-lg sm:ml-auto">Salvar PDI</button>
+                        </div>
+                    </form>
+                    <div class="border-t border-slate-200 mt-6 pt-5">
+                        <h4 class="font-bold text-slate-800 mb-3">Metas registradas</h4>
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                            ${pdiGoals.length ? pdiGoals.map(goal => `
+                                <article class="border rounded-xl p-4 ${goal.status === 'Concluida' ? 'border-emerald-200 bg-emerald-50/40' : 'border-slate-200'}">
+                                    <div class="flex justify-between gap-3"><strong class="text-sm">${escapeHtml(goal.goal)}</strong><span class="text-[10px] uppercase font-bold ${goal.status === 'Concluida' ? 'text-emerald-700' : 'text-blue-700'}">${escapeHtml(goal.status)}</span></div>
+                                    <p class="text-xs text-slate-600 mt-2"><b>Acao:</b> ${escapeHtml(goal.action)}</p><p class="text-xs text-slate-600 mt-1"><b>Sucesso:</b> ${escapeHtml(goal.indicator)}</p>
+                                    <div class="flex justify-between items-center mt-3"><span class="text-xs text-slate-500">Prazo: ${formatDateBr(goal.deadline)}</span><button type="button" onclick="togglePdiGoalStatus('${goal.id}')" class="text-xs font-semibold text-emerald-700 hover:underline">${goal.status === 'Concluida' ? 'Reabrir' : 'Marcar concluida'}</button></div>
+                                </article>
+                            `).join('') : '<p class="text-sm text-slate-500">Nenhuma meta de PDI registrada.</p>'}
+                        </div>
+                    </div>
+                </section>
+            `}
+        </div>
+    `;
+}
+
 function adminSetTab(tab) {
     uiState.activeAdminTab = tab;
     renderApp();
@@ -1473,17 +2285,60 @@ async function adminAddColab(event) {
     renderApp();
 }
 
+function openAdvancedCompetencyModal() {
+    const modal = document.getElementById('advanced-competency-modal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    document.getElementById('advanced-proficiency')?.focus();
+}
+
+function closeAdvancedCompetencyModal(event) {
+    // Clique no fundo fecha o modal; cliques no painel interno nao propagam o fechamento.
+    if (event && event.target.id !== 'advanced-competency-modal') return;
+    const modal = document.getElementById('advanced-competency-modal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+
+function toggleCompetencyRenewal(checked) {
+    const validityGroup = document.getElementById('advanced-validity-group');
+    const validityInput = document.getElementById('advanced-validity-months');
+    validityGroup?.classList.toggle('hidden', !checked);
+    if (validityInput) {
+        validityInput.disabled = !checked;
+        validityInput.required = checked;
+        if (checked && !validityInput.value) validityInput.value = '12';
+    }
+}
+
 async function adminAddComp(event) {
     event.preventDefault();
     const name = document.getElementById('newCompName').value.trim();
     if (!name) return;
-    db.competencies.push({
+    const renewalRequired = document.getElementById('advanced-renewal').checked;
+    const prerequisiteIds = [...document.querySelectorAll('input[name="advancedPrerequisite"]:checked')].map(input => input.value);
+
+    // Um unico objeto reune dados basicos e avancados para persistencia/API.
+    const competency = normalizeCompetency({
         id: `c${Date.now()}`,
         name,
         sector: document.getElementById('newCompSector').value,
         category: document.getElementById('newCompCategory').value,
-        mandatory: document.getElementById('newCompMandatory').value === 'true'
+        mandatory: document.getElementById('newCompMandatory').value === 'true',
+        advanced: {
+            targetProficiency: document.getElementById('advanced-proficiency').value,
+            renewal: {
+                required: renewalRequired,
+                validityMonths: renewalRequired ? Number(document.getElementById('advanced-validity-months').value) : null
+            },
+            prerequisiteIds,
+            criticality: document.getElementById('advanced-criticality').value,
+            evidenceMethod: document.getElementById('advanced-evidence').value
+        }
     });
+    db.competencies.push(competency);
     const saved = await saveData();
     if (!saved) return;
     showToast('Competencia adicionada com sucesso.');
@@ -1572,7 +2427,6 @@ function renderAdministracao() {
         3: { label: 'Especialista (N3)', color: 'bg-green-50 text-green-800 border-green-300', dot: 'bg-green-500 border-green-600' }
     };
     const tabs = [
-        { id: 'avaliacao', label: 'Avaliacao Digital', icon: 'clipboard-check' },
         { id: 'colab', label: 'Novo Colaborador', icon: 'user-plus' },
         { id: 'comp', label: 'Nova Competencia', icon: 'file-plus' },
         { id: 'gaps', label: 'Report de Gaps', icon: 'alert-triangle' },
@@ -1583,7 +2437,7 @@ function renderAdministracao() {
         <div class="space-y-4 md:space-y-6 animate-fade-in">
             <h2 class="text-xl md:text-2xl font-bold text-slate-800">Administracao do Sistema</h2>
             <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 border-b border-slate-200 bg-slate-50 p-2 gap-2">
+                <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 border-b border-slate-200 bg-slate-50 p-2 gap-2">
                     ${tabs.map(item => `
                         <button onclick="adminSetTab('${item.id}')" class="py-3 px-3 rounded-lg font-medium text-sm flex justify-center items-center transition-colors ${tab === item.id ? 'bg-white text-blue-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:bg-slate-100'}">
                             <i data-lucide="${item.icon}" class="mr-2 w-5 h-5"></i> ${item.label}
@@ -1680,8 +2534,70 @@ function renderAdministracao() {
                                     </select>
                                 </label>
                             </div>
-                            <button type="submit" class="bg-blue-600 text-white font-medium py-2 px-6 rounded-lg hover:bg-blue-700 w-full sm:w-auto">Salvar competencia</button>
+                            <div class="flex flex-col-reverse sm:flex-row sm:justify-between gap-3 pt-2">
+                                <button type="button" onclick="openAdvancedCompetencyModal()" class="text-blue-600 hover:text-blue-800 hover:bg-blue-50 border border-transparent px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center">
+                                    <i data-lucide="sliders-horizontal" class="w-4 h-4 mr-2"></i> Configuracoes Avancadas
+                                </button>
+                                <button type="submit" class="bg-blue-600 text-white font-medium py-2.5 px-6 rounded-lg hover:bg-blue-700 w-full sm:w-auto">Salvar competencia</button>
+                            </div>
                         </form>
+
+                        <div id="advanced-competency-modal" onclick="closeAdvancedCompetencyModal(event)" class="hidden fixed inset-0 z-[180] bg-slate-900/60 backdrop-blur-sm items-end sm:items-center justify-center p-0 sm:p-4">
+                            <section role="dialog" aria-modal="true" aria-labelledby="advanced-competency-title" class="bg-white w-full sm:max-w-3xl max-h-[92vh] rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+                                <header class="px-5 py-4 border-b border-slate-200 flex justify-between items-start gap-4 bg-slate-50">
+                                    <div><p class="text-xs font-bold uppercase tracking-widest text-blue-600">Cadastro logistico</p><h3 id="advanced-competency-title" class="text-lg font-bold text-slate-900 mt-1">Configuracoes Avancadas</h3><p class="text-xs text-slate-500 mt-1">Defina governanca, criticidade e evidencias da competencia.</p></div>
+                                    <button type="button" onclick="closeAdvancedCompetencyModal()" aria-label="Fechar configuracoes" class="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg"><i data-lucide="x" class="w-5 h-5"></i></button>
+                                </header>
+                                <div class="p-4 sm:p-6 space-y-6 overflow-y-auto custom-scrollbar">
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <label class="block text-sm font-semibold text-slate-700">Nivel de proficiencia esperado
+                                            <select id="advanced-proficiency" class="mt-1 w-full border border-slate-300 rounded-lg p-3 bg-white outline-none focus:ring-2 focus:ring-blue-500">
+                                                <option value="Basico">Basico (Em treinamento)</option>
+                                                <option value="Intermediario" selected>Intermediario (Autonomo)</option>
+                                                <option value="Avancado">Avancado (Multiplicador)</option>
+                                            </select>
+                                            <span class="block text-xs font-normal text-slate-500 mt-1.5"><i data-lucide="info" class="inline w-3.5 h-3.5 mr-1"></i>Avancado identifica quem esta apto a treinar a equipe no chao de fabrica.</span>
+                                        </label>
+                                        <label class="block text-sm font-semibold text-slate-700">Criticidade / peso
+                                            <select id="advanced-criticality" class="mt-1 w-full border border-slate-300 rounded-lg p-3 bg-white outline-none focus:ring-2 focus:ring-blue-500">
+                                                <option value="Baixa">Baixa</option><option value="Media" selected>Media</option><option value="Alta">Alta</option><option value="Critica">Critica</option>
+                                            </select>
+                                            <span class="block text-xs font-normal text-slate-500 mt-1.5">Preparado para ponderar o impacto em futuras notas digitais.</span>
+                                        </label>
+                                    </div>
+
+                                    <div class="border border-slate-200 rounded-xl p-4">
+                                        <label class="flex items-start gap-3 cursor-pointer">
+                                            <input id="advanced-renewal" type="checkbox" onchange="toggleCompetencyRenewal(this.checked)" class="mt-0.5 w-5 h-5 rounded text-blue-600 border-slate-300">
+                                            <span><strong class="block text-sm text-slate-800">Exige reciclagem ou validade periodica</strong><span class="block text-xs text-slate-500 mt-0.5">Use para NRs, operacao de empilhadeira e certificacoes com vencimento.</span></span>
+                                        </label>
+                                        <label id="advanced-validity-group" class="hidden block text-sm font-semibold text-slate-700 mt-4 max-w-xs">Prazo de validade (em meses)
+                                            <input id="advanced-validity-months" type="number" min="1" max="120" step="1" value="12" disabled class="mt-1 w-full border border-slate-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500">
+                                        </label>
+                                    </div>
+
+                                    <fieldset>
+                                        <legend class="text-sm font-semibold text-slate-700">Pre-requisitos de competencia</legend>
+                                        <p class="text-xs text-slate-500 mt-1">Selecione os dominios que precisam vir antes desta competencia.</p>
+                                        <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto custom-scrollbar border border-slate-200 rounded-xl p-3 bg-slate-50">
+                                            ${db.competencies.length ? db.competencies.map(comp => `<label class="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-3 cursor-pointer hover:border-blue-300"><input type="checkbox" name="advancedPrerequisite" value="${comp.id}" class="w-4 h-4 text-blue-600 rounded"><span class="min-w-0"><strong class="block text-xs text-slate-700 truncate">${escapeHtml(comp.name)}</strong><span class="block text-[10px] text-slate-400">${sectorLabel(comp.sector)}</span></span></label>`).join('') : '<p class="text-xs text-slate-500 sm:col-span-2">Cadastre outra competencia para habilitar pre-requisitos.</p>'}
+                                        </div>
+                                    </fieldset>
+
+                                    <label class="block text-sm font-semibold text-slate-700">Metodo de comprovacao / evidencia
+                                        <select id="advanced-evidence" class="mt-1 w-full border border-slate-300 rounded-lg p-3 bg-white outline-none focus:ring-2 focus:ring-blue-500">
+                                            <option value="Observacao pratica">Observacao Pratica (No Chao de Fabrica)</option>
+                                            <option value="Historico de indicadores">Historico de Indicadores (Metricas WMS/Produtividade)</option>
+                                            <option value="Certificacao formal">Certificacao/Treinamento Formal</option>
+                                        </select>
+                                    </label>
+                                </div>
+                                <footer class="p-4 border-t border-slate-200 bg-slate-50 flex flex-col-reverse sm:flex-row justify-end gap-2">
+                                    <button type="button" onclick="closeAdvancedCompetencyModal()" class="px-5 py-2.5 text-slate-600 hover:bg-slate-200 rounded-lg font-medium">Cancelar</button>
+                                    <button type="button" onclick="closeAdvancedCompetencyModal()" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold">Aplicar configuracoes</button>
+                                </footer>
+                            </section>
+                        </div>
                     ` : ''}
                     ${tab === 'gaps' ? `
                         <form onsubmit="adminAddGap(event)" class="space-y-5 max-w-3xl mx-auto">
@@ -1784,11 +2700,6 @@ function renderAdministracao() {
                         </form>
                     ` : ''}
                 </div>
-                <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-end">
-                    <button onclick="adminResetData()" class="text-slate-500 hover:text-red-600 text-sm flex items-center">
-                        <i data-lucide="rotate-ccw" class="mr-1 w-4 h-4"></i> Restaurar dados iniciais
-                    </button>
-                </div>
             </div>
         </div>
     `;
@@ -1806,17 +2717,20 @@ function renderApp() {
     const container = document.getElementById('app-content');
     const views = {
         dashboard: renderDashboard,
+        desempenho: renderPerformance,
         cadastro: renderCadastro,
         competencias: renderCompetencias,
         'matriz-exp': () => renderMatriz(SECTOR_EXPEDICAO),
-        'matriz-out': () => renderMatriz(SECTOR_OUTBOUND),
         'polivalencia-exp': () => renderPolivalencia(SECTOR_EXPEDICAO),
-        'polivalencia-out': () => renderPolivalencia(SECTOR_OUTBOUND),
         absenteismo: renderAbsenteismo,
         admin: renderAdministracao
     };
     container.innerHTML = (views[uiState.activeTab] || renderDashboard)();
     createIcons();
+    // O canvas so existe depois que o HTML da view foi inserido no DOM.
+    if (uiState.activeTab === 'desempenho' && getPerformanceCollaborator()) {
+        initializePerformanceRadar(getPerformanceDraftScores(getPerformanceCollaborator()));
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
